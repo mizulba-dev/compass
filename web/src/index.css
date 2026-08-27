@@ -1,0 +1,217 @@
+:root {
+  --text: #3a3a42;
+  --text-dim: #767685;
+  --text-h: #14141a;
+  --bg: #faf9fb;
+  --card-bg: #ffffff;
+  --border: #e4e2ea;
+  --accent: #6a4cff;
+  --accent-bg: rgba(106, 76, 255, 0.08);
+  --accent-border: rgba(106, 76, 255, 0.35);
+  --done: #8f8fa0;
+  --danger: #d64545;
+
+  font: 16px/1.5 system-ui, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: light dark;
+  color: var(--text);
+  background: var(--bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #d6d5dd;
+    --text-dim: #96959f;
+    --text-h: #f4f3f8;
+    --bg: #131217;
+    --card-bg: #1b1a21;
+    --border: #2c2b33;
+    --accent: #a794ff;
+    --accent-bg: rgba(167, 148, 255, 0.12);
+    --accent-border: rgba(167, 148, 255, 0.4);
+    --done: #63626e;
+    --danger: #ff6b6b;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 16px;
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.card h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.goal-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-h);
+  margin: 0 0 4px;
+}
+
+.goal-meta {
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.progress-bar {
+  margin-top: 12px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--accent-bg);
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.current-summary {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.gap-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gap-chip {
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--text-h);
+}
+
+.gap-chip.resolved {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.task-row.done .task-text {
+  color: var(--done);
+  text-decoration: line-through;
+}
+
+.task-text {
+  flex: 1;
+  font-size: 15px;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.task-day {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.task-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.icon-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  padding: 6px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--accent-bg);
+  color: var(--text-h);
+}
+
+.icon-btn.danger:hover {
+  color: var(--danger);
+}
+
+.empty-hint {
+  font-size: 14px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.policy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.policy-item {
+  font-size: 14px;
+  padding-left: 12px;
+  border-left: 3px solid var(--accent);
+}
+
+.policy-derived {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.app-header {
+  text-align: center;
+}
+
+.app-header .app-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.status-line {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+}

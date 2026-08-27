@@ -1,0 +1,17 @@
+# Go
+/compass
+*.exe
+
+# Web
+web/node_modules/
+web/dist/
+
+# Env
+.env
+
+# OS
+.DS_Store
+
+# Local work artifacts
+/.work/
+shakedown/out/
