@@ -1,40 +1,34 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Canvas, Task } from './types';
-import { createCanvas, getCanvas, updateTasks, editTasksHuman, recordHumanAction, StaleTokenError } from './api';
+import { getCanvas, updateTasks, editTasksHuman, recordHumanAction, StaleTokenError } from './api';
 import { subscribeLive } from './live';
-import { registerWebMCPTools } from './webmcp/register';
+import { resolveCanvasId } from './canvasBootstrap';
+import { setCanvasUpdateListener } from './webmcp/register';
 import { GoalCard } from './components/GoalCard';
 import { CurrentCard } from './components/CurrentCard';
 import { GapChips } from './components/GapChips';
 import { PlanList } from './components/PlanList';
 import { PolicyList } from './components/PolicyList';
 
-function canvasIdFromPath(): string | null {
-  const match = window.location.pathname.match(/^\/c\/([^/]+)$/);
-  return match ? match[1] : null;
-}
-
 function App() {
-  const [id, setId] = useState<string | null>(canvasIdFromPath());
+  const [id, setId] = useState<string | null>(null);
   const [canvas, setCanvas] = useState<Canvas | null>(null);
   const [connected, setConnected] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const readTokenRef = useRef('');
 
-  // Bootstrap: create a new canvas and adopt its URL as the share link when
-  // none is present in the path.
+  // Resolve the canvas id via the same shared bootstrap a pre-mount WebMCP
+  // tool call may already be waiting on (or may have already resolved) —
+  // never creates a second canvas of its own.
   useEffect(() => {
-    if (id) return;
     let cancelled = false;
-    createCanvas().then(({ id: newId }) => {
-      if (cancelled) return;
-      window.history.replaceState(null, '', `/c/${newId}`);
-      setId(newId);
+    resolveCanvasId().then((resolvedId) => {
+      if (!cancelled) setId(resolvedId);
     });
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -53,17 +47,17 @@ function App() {
       setConnected(true);
     });
 
-    registerWebMCPTools({
-      canvasId: id,
-      onUpdate: (c) => {
-        setCanvas(c);
-        readTokenRef.current = c.readToken;
-      },
+    // Tools are already registered (see main.tsx, before this component
+    // even mounted) — just connect this instance as their UI sink.
+    setCanvasUpdateListener((c) => {
+      setCanvas(c);
+      readTokenRef.current = c.readToken;
     });
 
     return () => {
       cancelled = true;
       unsubscribe();
+      setCanvasUpdateListener(null);
     };
   }, [id]);
 
