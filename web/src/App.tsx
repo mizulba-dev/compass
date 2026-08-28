@@ -157,7 +157,11 @@ function App() {
           {errorMessage ?? webmcpStatusText(webmcpStatus)}
         </p>
       </div>
-      <div className="hint-bar">drag: 移動 ／ dblclick: 編集・追加</div>
+      <div className="hint-bar">
+        click: 子を生やす ／ drag: 移動
+        <br />
+        dblclick: 編集 ／ 右クリック・長押し: メニュー
+      </div>
 
       {map ? (
         <FogMapCanvas nodes={map.nodes} onAdd={handleAdd} onEdit={handleEdit} />

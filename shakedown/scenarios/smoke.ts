@@ -1,12 +1,11 @@
 // Smoke coverage for the v3 fog-map canvas UI: root placement via inline
-// editing (dblclick -> type -> Enter, mirroring the actual human flow) ->
-// add a node via the API directly (mirroring what a WebMCP add_nodes tool
-// call would do) -> drag the human-created root -> select + toggle fog on
-// the added node. Locators are scoped to visible elements (data-testid
-// attributes on the actual UI), per project convention. Node creation uses
-// inline contenteditable-style editing rather than window.prompt() (which
-// is suppressed in some embedded browsers), so this scenario drives the
-// same keystrokes a human would type.
+// editing (dblclick -> type -> Enter) -> a plain click on the root sprouts
+// a child and drops straight into its inline editing (the click-to-grow
+// operation) -> add a second child via the API directly (mirroring a
+// WebMCP add_nodes tool call) -> drag the root -> right-click (contextmenu)
+// the click-grown child to open its floating toolbar and toggle fog.
+// Locators are scoped to visible elements (data-testid attributes on the
+// actual UI), per project convention.
 export default async ({
   page,
   mark,
@@ -27,6 +26,22 @@ export default async ({
 
   const rootId = await page.getAttribute('[data-testid="map-node"]', 'data-node-id');
 
+  // A plain click on the root must sprout a child and drop straight into
+  // editing it — no separate "add" affordance.
+  await page.locator(`[data-node-id="${rootId}"]`).click();
+  await page.waitForSelector('[data-testid="node-edit-input"]');
+  await page.keyboard.type('住宅ローンの基本を知る');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('[data-testid="map-node"]:not(.editing)');
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="map-node"]').length === 2);
+  await mark('click-grew-child');
+
+  const clickChildId = await page.$$eval(
+    '[data-testid="map-node"]',
+    (els, rootId) => els.map((e) => e.getAttribute('data-node-id')).find((id) => id !== rootId),
+    rootId,
+  );
+
   const map = await page.evaluate(async () => {
     const id = window.location.pathname.split('/c/')[1];
     const res = await fetch(`/api/canvas/${id}`);
@@ -46,7 +61,7 @@ export default async ({
   );
 
   await page.reload();
-  await page.waitForFunction(() => document.querySelectorAll('[data-testid="map-node"]').length === 2);
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="map-node"]').length === 3);
   await mark('node-added');
 
   // Drag the root node a bit.
@@ -59,9 +74,8 @@ export default async ({
   await page.mouse.up();
   await mark('node-dragged');
 
-  // Select the child node and clear/toggle its fog via the floating toolbar.
-  const childHandle = page.locator('[data-testid="map-node"]').filter({ hasNotText: '住宅購入' });
-  await childHandle.click();
+  // Right-click (contextmenu) the click-grown child to open its toolbar and toggle fog.
+  await page.locator(`[data-node-id="${clickChildId}"]`).click({ button: 'right' });
   await page.waitForSelector('[data-testid="node-toggle-fog"]');
   await page.click('[data-testid="node-toggle-fog"]');
   await page.waitForSelector('.node.fogged');

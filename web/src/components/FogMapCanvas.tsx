@@ -32,6 +32,9 @@ interface View {
   scale: number;
 }
 
+const SINGLE_CLICK_DELAY_MS = 250;
+const LONG_PRESS_MS = 500;
+
 function childOf(nodes: MapNode[], parentId: string): MapNode[] {
   return nodes.filter((n) => n.parent === parentId);
 }
@@ -74,6 +77,15 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
   // pointerup, when the final position is persisted.
   const pendingEdgeDragRef = useRef<{ node: MapNode; x: number; y: number } | null>(null);
   const edgeRafIdRef = useRef<number | null>(null);
+  // Single click grows a child; double click edits the existing node. Both
+  // start from the same pointerup, so a plain tap defers its action for
+  // SINGLE_CLICK_DELAY_MS — if a second tap on the same node lands before
+  // that fires, we cancel it and let the native dblclick handler (which
+  // fires within the same window) take over instead, so a double click
+  // never also sprouts a child.
+  const pendingClickRef = useRef<{ timer: ReturnType<typeof setTimeout>; nodeId: string } | null>(null);
+  // Long-press (touch) opens the same menu a right-click does.
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toWorld = (clientX: number, clientY: number) => ({
     x: (clientX - view.x) / view.scale,
@@ -202,6 +214,22 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
     });
   };
 
+  /** Cancels any single-click-grows-a-child timer waiting on `node`, so a following dblclick (edit) never also sprouts a child. */
+  const cancelPendingClick = (nodeId?: string) => {
+    const pending = pendingClickRef.current;
+    if (pending && (nodeId === undefined || pending.nodeId === nodeId)) {
+      clearTimeout(pending.timer);
+      pendingClickRef.current = null;
+    }
+  };
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current != null) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
   const handleNodePointerDown = (e: React.PointerEvent, node: MapNode) => {
     if (editingId === node.id) return;
     e.stopPropagation();
@@ -212,6 +240,18 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
     let curX = ox, curY = oy;
     el.setPointerCapture(e.pointerId);
 
+    if (e.pointerType === 'touch') {
+      clearLongPressTimer();
+      longPressTimerRef.current = setTimeout(() => {
+        longPressTimerRef.current = null;
+        const drag = draggingRef.current;
+        if (drag && !drag.moved) {
+          cancelPendingClick(node.id);
+          setSelectedId(node.id);
+        }
+      }, LONG_PRESS_MS);
+    }
+
     const move = (ev: PointerEvent) => {
       const dx = (ev.clientX - startX) / view.scale;
       const dy = (ev.clientY - startY) / view.scale;
@@ -219,6 +259,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
       if (!drag) return;
       if (!drag.moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 4) {
         drag.moved = true;
+        clearLongPressTimer();
         setSelectedId(null);
         el.classList.add('dragging');
       }
@@ -234,6 +275,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);
       el.classList.remove('dragging');
+      clearLongPressTimer();
       if (edgeRafIdRef.current != null) {
         cancelAnimationFrame(edgeRafIdRef.current);
         edgeRafIdRef.current = null;
@@ -243,15 +285,34 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
       draggingRef.current = null;
       if (drag?.moved) {
         void onEdit({ id: node.id, x: curX, y: curY });
-      } else {
-        setSelectedId(node.id);
+        return;
       }
+      // A plain tap: if a second tap on this same node lands within
+      // SINGLE_CLICK_DELAY_MS, treat the pair as a double click and let the
+      // dblclick handler edit the node instead (see cancelPendingClick).
+      if (pendingClickRef.current?.nodeId === node.id) {
+        cancelPendingClick(node.id);
+        return;
+      }
+      const timer = setTimeout(() => {
+        pendingClickRef.current = null;
+        void addChild(node);
+      }, SINGLE_CLICK_DELAY_MS);
+      pendingClickRef.current = { timer, nodeId: node.id };
     };
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', up);
   };
 
+  const handleNodeContextMenu = (e: React.MouseEvent, node: MapNode) => {
+    e.preventDefault();
+    e.stopPropagation();
+    cancelPendingClick(node.id);
+    setSelectedId(node.id);
+  };
+
   const startEdit = (node: MapNode) => {
+    cancelPendingClick(node.id);
     setSelectedId(null);
     setEditingId(node.id);
     setEditingText(node.text);
@@ -335,6 +396,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
                   e.stopPropagation();
                   startEdit(n);
                 }}
+                onContextMenu={(e) => handleNodeContextMenu(e, n)}
               >
                 {isEditing ? (
                   <textarea
@@ -372,14 +434,12 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
                 )}
 
                 {selected && selected.id === n.id && !isEditing && (
-                  <div className="node-toolbar" data-testid="node-toolbar" onPointerDown={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={() => void addChild(n)}
-                      data-testid="node-add-child"
-                    >
-                      ＋子
-                    </button>
+                  <div
+                    className="node-toolbar"
+                    data-testid="node-toolbar"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onContextMenu={(e) => e.preventDefault()}
+                  >
                     {!n.root && (
                       <button
                         type="button"
