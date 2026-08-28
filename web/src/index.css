@@ -107,15 +107,9 @@ body {
   border-color: var(--node-color, var(--accent));
   border-radius: 6px;
 }
-.node.task.done {
-  background: color-mix(in srgb, var(--ink) 6%, var(--node-bg));
-  border-color: var(--node-edge);
-}
 .node.fogged { background: var(--fog-bg); border: 1.6px dashed var(--fog); color: var(--ink-soft); }
-.node.done { opacity: .55; }
 .node.done .text { text-decoration: line-through; }
 .node .task-check { display: inline-flex; margin-right: 5px; vertical-align: -2px; cursor: pointer; color: var(--node-color, var(--accent)); }
-.node.done .task-check { color: var(--ink-soft); }
 .node .spark { display: inline-flex; margin-right: 4px; opacity: .9; vertical-align: -1px; }
 .node .fogtag {
   display: flex; align-items: center; gap: 3px; font-size: .64rem; color: var(--fog);
@@ -223,7 +217,7 @@ body {
   background: var(--ground); border: 1px solid var(--node-edge); border-radius: 8px;
   padding: 7px 11px; font-size: .85rem;
 }
-.sheet li.done { text-decoration: line-through; opacity: .55; }
+.sheet li.done { text-decoration: line-through; }
 .sheet .close {
   position: absolute; top: 12px; right: 12px; background: none; border: none;
   display: flex; cursor: pointer; color: var(--ink-soft);
