@@ -140,9 +140,18 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
     });
   };
 
+  // Trackpad convention (matches Miro): ctrlKey on a wheel event means a
+  // pinch gesture (or an explicit Ctrl+wheel), so it zooms — smoothly,
+  // proportional to deltaY, rather than in fixed 1.08x steps, since a pinch
+  // reports a continuous stream of small deltas. Without ctrlKey, a wheel
+  // event is two-finger scroll and should pan the map, never zoom it.
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.08 : 1 / 1.08);
+    if (e.ctrlKey) {
+      zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
+    } else {
+      setView((v) => ({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }));
+    }
   };
 
   const fit = () => {
