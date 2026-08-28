@@ -1,3 +1,4 @@
+import { X } from 'lucide-react';
 import type { Harvest } from '../types';
 
 interface HarvestSheetProps {
@@ -10,7 +11,7 @@ export function HarvestSheet({ harvest, open, onClose }: HarvestSheetProps) {
   return (
     <div className={`sheet${open ? ' open' : ''}`} role="dialog" aria-label="収穫" data-testid="harvest-sheet">
       <button type="button" className="close" aria-label="閉じる" onClick={onClose}>
-        ✕
+        <X size={16} />
       </button>
       <h2>収穫 — 地図から畳んだ計画</h2>
       <p className="sub">各項目は地図のノード由来。地図はこのまま残ります。</p>

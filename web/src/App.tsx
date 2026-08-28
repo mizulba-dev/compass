@@ -7,6 +7,7 @@ import { resolveCanvasId } from './canvasBootstrap';
 import { setMapUpdateListener, setWebMCPStatusListener, type WebMCPStatus } from './webmcp/register';
 import { FogMapCanvas, type AddNodeInput, type EditNodeInput } from './components/FogMapCanvas';
 import { HarvestSheet } from './components/HarvestSheet';
+import { Download } from 'lucide-react';
 
 function webmcpStatusText(status: WebMCPStatus): string {
   switch (status.state) {
@@ -195,7 +196,7 @@ function App() {
               data-testid="harvest-fab"
               onClick={() => setSheetOpen(true)}
             >
-              ⇣ 収穫
+              <Download size={16} /> 収穫
             </button>
           )}
 

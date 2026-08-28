@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { HelpCircle, MessageCircle, Pencil, Star, Trash2, Sparkles, Plus, Minus, Maximize } from 'lucide-react';
 import type { MapNode } from '../types';
 
 export interface AddNodeInput {
@@ -547,11 +548,27 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
                   />
                 ) : (
                   <>
-                    {n.origin === 'agent' && !n.root && <span className="spark">✦</span>}
-                    {n.star && <span className="spark">★</span>}
-                    {discussedIds.has(n.id) && <span className="spark" data-testid="discuss-badge">💬</span>}
+                    {n.origin === 'agent' && !n.root && (
+                      <span className="spark">
+                        <Sparkles size={12} />
+                      </span>
+                    )}
+                    {n.star && (
+                      <span className="spark">
+                        <Star size={12} fill="currentColor" />
+                      </span>
+                    )}
+                    {discussedIds.has(n.id) && (
+                      <span className="spark" data-testid="discuss-badge">
+                        <MessageCircle size={12} />
+                      </span>
+                    )}
                     <span className="text">{n.text || ' '}</span>
-                    {n.fog && <span className="fogtag">❓ わからない</span>}
+                    {n.fog && (
+                      <span className="fogtag">
+                        <HelpCircle size={12} /> わからない
+                      </span>
+                    )}
                   </>
                 )}
 
@@ -571,18 +588,18 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
                         onClick={() => void onEdit({ id: n.id, fog: !n.fog })}
                         data-testid="node-toggle-fog"
                       >
-                        {n.fog ? '❓ 解消した' : '❓ わからない'}
+                        <HelpCircle size={14} /> {n.fog ? '解消した' : 'わからない'}
                       </button>
                     )}
                     <button type="button" onClick={() => startEdit(n)} data-testid="node-start-edit">
-                      ✏ 編集
+                      <Pencil size={14} /> 編集
                     </button>
                     <button
                       type="button"
                       onClick={() => toggleDiscuss(n)}
                       data-testid="node-discuss"
                     >
-                      {discussedIds.has(n.id) ? '💬 解除' : '💬 相談'}
+                      <MessageCircle size={14} /> {discussedIds.has(n.id) ? '解除' : '相談'}
                     </button>
                     {!n.root && (
                       <button
@@ -590,7 +607,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
                         onClick={() => void onEdit({ id: n.id, star: !n.star })}
                         data-testid="node-toggle-star"
                       >
-                        {n.star ? '★ 解除' : '★ 重要'}
+                        <Star size={14} fill={n.star ? 'currentColor' : 'none'} /> {n.star ? '解除' : '重要'}
                       </button>
                     )}
                     <button
@@ -602,7 +619,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
                       style={{ color: 'var(--danger)' }}
                       data-testid="node-delete"
                     >
-                      ✕ 削除
+                      <Trash2 size={14} /> 削除
                     </button>
                   </div>
                 )}
@@ -633,9 +650,15 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
       {createPortal(
         <>
           <div className="zoomer">
-            <button type="button" aria-label="拡大" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1.2)}>＋</button>
-            <button type="button" aria-label="縮小" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1 / 1.2)}>－</button>
-            <button type="button" aria-label="全体表示" style={{ fontSize: '.7rem' }} onClick={fit}>⌂</button>
+            <button type="button" aria-label="拡大" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1.2)}>
+              <Plus size={18} />
+            </button>
+            <button type="button" aria-label="縮小" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1 / 1.2)}>
+              <Minus size={18} />
+            </button>
+            <button type="button" aria-label="全体表示" onClick={fit}>
+              <Maximize size={15} />
+            </button>
           </div>
 
           <button
@@ -648,7 +671,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
               void placeFreeNode(p.x, p.y);
             }}
           >
-            ＋
+            <Plus size={24} />
           </button>
         </>,
         document.body,

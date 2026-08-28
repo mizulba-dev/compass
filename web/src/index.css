@@ -100,9 +100,9 @@ body {
 .node:focus-visible { outline: 2px solid var(--node-color, var(--accent)); outline-offset: 2px; }
 .node.question { border-style: dashed; }
 .node.fogged { background: var(--fog-bg); border: 1.6px dashed var(--fog); color: var(--ink-soft); }
-.node .spark { font-size: .68rem; margin-right: 4px; opacity: .9; }
+.node .spark { display: inline-flex; margin-right: 4px; opacity: .9; vertical-align: -1px; }
 .node .fogtag {
-  display: block; font-size: .64rem; color: var(--fog);
+  display: flex; align-items: center; gap: 3px; font-size: .64rem; color: var(--fog);
   font-family: ui-monospace, monospace; margin-top: 2px;
 }
 .node .text { white-space: pre-wrap; overflow-wrap: break-word; }
@@ -138,6 +138,7 @@ body {
    the node instead. top: 100% is the node's own bottom edge. */
 .node-toolbar.below { top: 100%; transform: translate(-50%, 8px); }
 .node-toolbar button {
+  display: inline-flex; align-items: center; gap: 4px;
   background: none; border: none; cursor: pointer; color: inherit;
   font-family: inherit; font-size: .78rem; padding: 3px 8px; border-radius: 6px;
 }
@@ -155,20 +156,23 @@ body {
   box-shadow: var(--shadow); overflow: hidden;
 }
 .zoomer button {
+  display: flex; align-items: center; justify-content: center;
   background: none; border: none; cursor: pointer; color: var(--ink);
-  font-size: 1rem; width: 38px; height: 36px;
+  width: 38px; height: 36px;
 }
 .zoomer button:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
 
 .add-fab {
   position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 50;
+  display: flex; align-items: center; justify-content: center;
   width: 52px; height: 52px; border-radius: 50%; border: none; cursor: pointer;
-  background: var(--ink); color: var(--ground); font-size: 1.5rem; line-height: 1;
+  background: var(--ink); color: var(--ground);
   box-shadow: var(--shadow);
 }
 
 .harvest-fab {
   position: fixed; right: 20px; bottom: 22px; z-index: 50;
+  display: inline-flex; align-items: center; gap: 6px;
   height: 46px; border-radius: 999px; border: none; cursor: pointer;
   padding: 0 18px; font-size: .92rem; font-weight: 700; font-family: inherit;
   background: var(--accent); color: #fff;
@@ -210,5 +214,5 @@ body {
 }
 .sheet .close {
   position: absolute; top: 12px; right: 12px; background: none; border: none;
-  font-size: 1rem; cursor: pointer; color: var(--ink-soft);
+  display: flex; cursor: pointer; color: var(--ink-soft);
 }
