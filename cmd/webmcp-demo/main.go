@@ -1,4 +1,4 @@
-// Command compass serves the Canvas API and the built React SPA from a
+// Command webmcp-demo serves the Canvas API and the built React SPA from a
 // single HTTP server, so the browser page and its WebMCP tools share one
 // origin (required for the credentials: "same-origin" fetches in
 // web/src/webmcp).
@@ -62,7 +62,7 @@ func main() {
 	mux.Handle("/", spaHandler(staticDir))
 
 	addr := ":" + port
-	log.Printf("compass listening on %s (static dir: %s)", addr, staticDir)
+	log.Printf("webmcp-demo listening on %s (static dir: %s)", addr, staticDir)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}

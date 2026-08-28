@@ -19,7 +19,7 @@ func testDSN() (dsn string, explicit bool) {
 	if v := os.Getenv("TEST_DATABASE_URL"); v != "" {
 		return v, true
 	}
-	return "postgres://compass:compass@localhost:55432/compass?sslmode=disable", false
+	return "postgres://webmcp:webmcp@localhost:55432/webmcp?sslmode=disable", false
 }
 
 // NewDB opens a connection to the test database and creates a fresh, empty

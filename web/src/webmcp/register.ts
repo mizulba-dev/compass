@@ -92,7 +92,7 @@ const POLL_TIMEOUT_MS = 20000;
 let registered = false;
 
 /**
- * Registers Compass's 6 WebMCP tools (read_map / add_nodes / update_node /
+ * Registers the demo's 6 WebMCP tools (read_map / add_nodes / update_node /
  * remove_node / arrange_nodes / harvest) on navigator.modelContext and document.modelContext, tolerating
  * a host (e.g. ChatGPT's in-app browser) that injects modelContext onto the
  * page asynchronously, after this module already ran. If present at call

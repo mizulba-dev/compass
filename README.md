@@ -91,7 +91,7 @@ Requires Go 1.24+, Node 20+, and Docker.
 cp .env.example .env            # adjust if you like; defaults match docker-compose.yml
 docker compose up -d db         # Postgres on localhost:55432
 cd web && npm ci && npm run build && cd ..
-DATABASE_URL=postgres://compass:compass@localhost:55432/compass?sslmode=disable \
+DATABASE_URL=postgres://webmcp:webmcp@localhost:55432/webmcp?sslmode=disable \
   PORT=8080 STATIC_DIR=web/dist go run ./cmd/webmcp-demo
 ```
 
