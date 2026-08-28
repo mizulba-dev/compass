@@ -215,3 +215,13 @@ body {
   color: var(--text-dim);
   text-align: center;
 }
+
+.app-footer {
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.app-footer .status-line {
+  font-size: 11px;
+  opacity: 0.7;
+}

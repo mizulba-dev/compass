@@ -3,19 +3,39 @@ import type { Canvas, Task } from './types';
 import { getCanvas, updateTasks, editTasksHuman, recordHumanAction, StaleTokenError } from './api';
 import { subscribeLive } from './live';
 import { resolveCanvasId } from './canvasBootstrap';
-import { setCanvasUpdateListener } from './webmcp/register';
+import { setCanvasUpdateListener, setWebMCPStatusListener, type WebMCPStatus } from './webmcp/register';
 import { GoalCard } from './components/GoalCard';
 import { CurrentCard } from './components/CurrentCard';
 import { GapChips } from './components/GapChips';
 import { PlanList } from './components/PlanList';
 import { PolicyList } from './components/PolicyList';
 
+function webmcpStatusText(status: WebMCPStatus): string {
+  switch (status.state) {
+    case 'waiting':
+      return 'Waiting for WebMCP…';
+    case 'registered':
+      return `Site tools: ${status.count} available`;
+    case 'unsupported':
+      return 'WebMCP not supported in this browser';
+  }
+}
+
 function App() {
   const [id, setId] = useState<string | null>(null);
   const [canvas, setCanvas] = useState<Canvas | null>(null);
   const [connected, setConnected] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [webmcpStatus, setWebmcpStatus] = useState<WebMCPStatus>({ state: 'waiting' });
   const readTokenRef = useRef('');
+
+  // Page-level status, independent of which canvas is loaded — connect as
+  // soon as this component exists so devtools-less hosts (ChatGPT's in-app
+  // browser) have something on screen to diagnose registration with.
+  useEffect(() => {
+    setWebMCPStatusListener(setWebmcpStatus);
+    return () => setWebMCPStatusListener(null);
+  }, []);
 
   // Resolve the canvas id via the same shared bootstrap a pre-mount WebMCP
   // tool call may already be waiting on (or may have already resolved) —
@@ -147,29 +167,35 @@ function App() {
     );
   };
 
-  if (!canvas) {
-    return (
-      <div className="status-line" role="status">
-        Loading canvas…
-      </div>
-    );
-  }
-
   return (
     <>
       <header className="app-header">
         <span className="app-name">COMPASS</span>
       </header>
 
-      <GoalCard goal={canvas.goal} tasks={canvas.tasks} />
-      <CurrentCard current={canvas.current} />
-      <GapChips gaps={canvas.gaps} />
-      <PlanList tasks={canvas.tasks} onToggle={handleToggle} onDelete={handleDelete} onMove={handleMove} />
-      <PolicyList policies={canvas.policies} />
+      {!canvas ? (
+        <div className="status-line" role="status">
+          Loading canvas…
+        </div>
+      ) : (
+        <>
+          <GoalCard goal={canvas.goal} tasks={canvas.tasks} />
+          <CurrentCard current={canvas.current} />
+          <GapChips gaps={canvas.gaps} />
+          <PlanList tasks={canvas.tasks} onToggle={handleToggle} onDelete={handleDelete} onMove={handleMove} />
+          <PolicyList policies={canvas.policies} />
 
-      <p className="status-line" data-testid="live-status" role={errorMessage ? 'alert' : undefined}>
-        {errorMessage ?? (connected ? 'Live' : 'Syncing…')}
-      </p>
+          <p className="status-line" data-testid="live-status" role={errorMessage ? 'alert' : undefined}>
+            {errorMessage ?? (connected ? 'Live' : 'Syncing…')}
+          </p>
+        </>
+      )}
+
+      <footer className="app-footer">
+        <p className="status-line" data-testid="webmcp-status">
+          {webmcpStatusText(webmcpStatus)}
+        </p>
+      </footer>
     </>
   );
 }
