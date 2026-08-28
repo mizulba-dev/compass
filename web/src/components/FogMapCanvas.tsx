@@ -36,6 +36,17 @@ function childOf(nodes: MapNode[], parentId: string): MapNode[] {
   return nodes.filter((n) => n.parent === parentId);
 }
 
+/** The point on a node's box an edge connects to — shared by the SVG render and the imperative drag-time update below, so both draw the exact same curve. */
+function anchorOf(x: number, y: number): { x: number; y: number } {
+  return { x: x + 60, y: y + 18 };
+}
+
+function edgePathD(a: { x: number; y: number }, b: { x: number; y: number }): string {
+  const dx = Math.max(50, Math.abs(b.x - a.x) * 0.5);
+  const sx = b.x > a.x ? 1 : -1;
+  return `M ${a.x} ${a.y} C ${a.x + dx * sx} ${a.y}, ${b.x - dx * sx} ${b.y}, ${b.x} ${b.y}`;
+}
+
 /** Mirrors the server's childPos: fan new children to the right (root's alternate left/right), stacked among same-side siblings. */
 function childPos(nodes: MapNode[], parent: MapNode): { x: number; y: number } {
   const siblings = childOf(nodes, parent.id);
@@ -55,6 +66,14 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
   const draggingRef = useRef<{ id: string; moved: boolean } | null>(null);
+  // Drag-time edge following: mirrors the mock's
+  // requestAnimationFrame(renderEdges) on every pointermove. The dragged
+  // node's own position is already updated directly via el.style (no
+  // setState per move, so no full re-render); the connected SVG paths need
+  // the same imperative treatment; a React re-render only happens once, on
+  // pointerup, when the final position is persisted.
+  const pendingEdgeDragRef = useRef<{ node: MapNode; x: number; y: number } | null>(null);
+  const edgeRafIdRef = useRef<number | null>(null);
 
   const toWorld = (clientX: number, clientY: number) => ({
     x: (clientX - view.x) / view.scale,
@@ -151,6 +170,38 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
   }
 
   // ---------- node interaction ----------
+
+  /** Rewrites the `d` of every SVG path touching `node` (its own edge to its parent, plus every edge to its children) to match a live drag position, without touching React state. */
+  const updateEdgesForDrag = (node: MapNode, x: number, y: number) => {
+    const world = worldRef.current;
+    if (!world) return;
+    const b = anchorOf(x, y);
+    if (node.parent) {
+      const parent = byId(node.parent);
+      if (parent) {
+        const path = world.querySelector<SVGPathElement>(`[data-edge-child="${node.id}"]`);
+        path?.setAttribute('d', edgePathD(anchorOf(parent.x, parent.y), b));
+      }
+    }
+    for (const child of nodes) {
+      if (child.parent === node.id) {
+        const path = world.querySelector<SVGPathElement>(`[data-edge-child="${child.id}"]`);
+        path?.setAttribute('d', edgePathD(b, anchorOf(child.x, child.y)));
+      }
+    }
+  };
+
+  /** Throttles edge updates to once per animation frame, mirroring the mock's requestAnimationFrame(renderEdges) on every pointermove — always applies the LATEST pending position, not the one at schedule time. */
+  const scheduleEdgeDragUpdate = (node: MapNode, x: number, y: number) => {
+    pendingEdgeDragRef.current = { node, x, y };
+    if (edgeRafIdRef.current != null) return;
+    edgeRafIdRef.current = requestAnimationFrame(() => {
+      edgeRafIdRef.current = null;
+      const pending = pendingEdgeDragRef.current;
+      if (pending) updateEdgesForDrag(pending.node, pending.x, pending.y);
+    });
+  };
+
   const handleNodePointerDown = (e: React.PointerEvent, node: MapNode) => {
     if (editingId === node.id) return;
     e.stopPropagation();
@@ -176,12 +227,18 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
         curY = oy + dy;
         el.style.left = curX + 'px';
         el.style.top = curY + 'px';
+        scheduleEdgeDragUpdate(node, curX, curY);
       }
     };
     const up = () => {
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);
       el.classList.remove('dragging');
+      if (edgeRafIdRef.current != null) {
+        cancelAnimationFrame(edgeRafIdRef.current);
+        edgeRafIdRef.current = null;
+      }
+      pendingEdgeDragRef.current = null;
       const drag = draggingRef.current;
       draggingRef.current = null;
       if (drag?.moved) {
@@ -241,14 +298,13 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
               .filter((n) => n.parent && byId(n.parent))
               .map((n) => {
                 const parent = byId(n.parent!)!;
-                const a = { x: parent.x + 60, y: parent.y + 18 };
-                const b = { x: n.x + 60, y: n.y + 18 };
-                const dx = Math.max(50, Math.abs(b.x - a.x) * 0.5);
-                const sx = b.x > a.x ? 1 : -1;
+                const a = anchorOf(parent.x, parent.y);
+                const b = anchorOf(n.x, n.y);
                 return (
                   <path
                     key={n.id}
-                    d={`M ${a.x} ${a.y} C ${a.x + dx * sx} ${a.y}, ${b.x - dx * sx} ${b.y}, ${b.x} ${b.y}`}
+                    data-edge-child={n.id}
+                    d={edgePathD(a, b)}
                     stroke={n.color || 'var(--node-edge)'}
                   />
                 );
