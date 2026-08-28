@@ -216,27 +216,44 @@ func findRootNode(m *MapData) *Node {
 	return nil
 }
 
-// subtreeHeight returns the total vertical pixels the leaves under node
-// need, gaps included — the real-height generalization of a leaf count.
-// relayout uses this to reserve each top branch an exact, contiguous pixel
-// band sized to its own (actual, wrapped-text-aware) shape, computed up
-// front rather than left to emerge from call order — so two branches on
-// the same side can never end up with interleaved or overlapping bands
-// regardless of how many separate add_nodes/remove_node turns grew them,
-// or how long any one node's text is.
+// subtreeHeight returns the vertical pixels node's whole subtree needs,
+// gaps included — the real-height generalization of a leaf count. relayout
+// uses this to reserve each top branch an exact, contiguous pixel band
+// sized to its own (actual, wrapped-text-aware) shape, computed up front
+// rather than left to emerge from call order — so two branches on the same
+// side can never end up with interleaved or overlapping bands regardless
+// of how many separate add_nodes/remove_node turns grew them, or how long
+// any one node's text is.
+//
+// It's the max of the node's own height and its children's combined
+// height, not just the children's — an internal node still renders its own
+// box at whatever y it lands on (the average of its children's), so if
+// IT is the tall one (long-wrapped text) while its children are short, the
+// band must be at least as tall as it is, or the next sibling band starts
+// too early and collides with it. This matters most on a long single-child
+// chain: subtreeHeight used to equal nothing but the leaf's own height,
+// ignoring however tall every ancestor above the leaf actually rendered —
+// letting a long-text internal node partway up such a chain collide with
+// the next top branch, which the final avoidCollisionsExcluding pass would
+// then "fix" by shoving that one node hundreds of pixels down, off away
+// from the rest of its own chain.
 func subtreeHeight(m *MapData, node *Node) float64 {
+	ownHeight := estimateHeight(node.Text)
 	kids := childrenOf(m, node.ID)
 	if len(kids) == 0 {
-		return estimateHeight(node.Text)
+		return ownHeight
 	}
-	total := 0.0
+	childrenHeight := 0.0
 	for i, k := range kids {
 		if i > 0 {
-			total += verticalGap
+			childrenHeight += verticalGap
 		}
-		total += subtreeHeight(m, k)
+		childrenHeight += subtreeHeight(m, k)
 	}
-	return total
+	if ownHeight > childrenHeight {
+		return ownHeight
+	}
+	return childrenHeight
 }
 
 // relayout re-tidies the whole map after any structural change (a node
