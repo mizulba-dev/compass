@@ -14,7 +14,10 @@ export const descriptions = {
     'carries humanActions: edits the human made directly on the canvas (adding, editing, ' +
     'moving, deleting, fogging/unfogging, or starring a node) since your last tool call. ' +
     'Read them and react to what they reveal about the human\'s judgment — never silently ' +
-    'revert or route around a human edit; their placement and deletions are final.',
+    'revert or route around a human edit; their placement and deletions are final. If ' +
+    'humanActions contains a "discuss" action, make that node the focus of the ' +
+    'conversation: explain context, offer options, or propose deeper branches for it. ' +
+    'When multiple discuss actions arrive, prioritize the most recent one.',
   add_nodes:
     'Adds up to 3 new nodes as children of an existing node (pass its id as parent — get ' +
     'ids from read_map). Never add more than 3 in one call, even if more come to mind — ' +

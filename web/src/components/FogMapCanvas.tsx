@@ -24,6 +24,8 @@ interface FogMapCanvasProps {
   onAdd: (input: AddNodeInput) => Promise<string | undefined>;
   /** Applies a human edit (move/fog/star/delete/text); resolves once persisted. */
   onEdit: (input: EditNodeInput) => Promise<void>;
+  /** Marks a node as the conversation's current focus (records a "discuss" humanAction). */
+  onDiscuss: (node: MapNode) => void;
 }
 
 interface View {
@@ -34,6 +36,12 @@ interface View {
 
 const SINGLE_CLICK_DELAY_MS = 250;
 const LONG_PRESS_MS = 500;
+// How long the 💬 badge stays lit after marking a node for discussion. This
+// is a client-only, purely visual hint (not persisted map data), so it's
+// simplest to just time it out rather than track whether the agent has
+// actually consumed the humanAction yet — the badge is a nudge, not a
+// source of truth.
+const DISCUSS_BADGE_MS = 60000;
 
 function childOf(nodes: MapNode[], parentId: string): MapNode[] {
   return nodes.filter((n) => n.parent === parentId);
@@ -61,13 +69,17 @@ function childPos(nodes: MapNode[], parent: MapNode): { x: number; y: number } {
 }
 
 
-export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
+export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
+  // Which nodes currently show the 💬 badge. Purely a client-side visual
+  // hint (see DISCUSS_BADGE_MS) — never persisted, never read from the map.
+  const [discussedIds, setDiscussedIds] = useState<Set<string>>(new Set());
+  const discussTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const draggingRef = useRef<{ id: string; moved: boolean } | null>(null);
   // Drag-time edge following: mirrors the mock's
   // requestAnimationFrame(renderEdges) on every pointermove. The dragged
@@ -180,6 +192,30 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
       setEditingText('');
     }
   }
+
+  // ---------- discuss ----------
+  const markDiscuss = (node: MapNode) => {
+    onDiscuss(node);
+    const existing = discussTimersRef.current.get(node.id);
+    if (existing) clearTimeout(existing);
+    setDiscussedIds((prev) => new Set(prev).add(node.id));
+    const timer = setTimeout(() => {
+      discussTimersRef.current.delete(node.id);
+      setDiscussedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(node.id);
+        return next;
+      });
+    }, DISCUSS_BADGE_MS);
+    discussTimersRef.current.set(node.id, timer);
+  };
+
+  useEffect(() => {
+    const timers = discussTimersRef.current;
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   // ---------- node interaction ----------
 
@@ -436,6 +472,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
                   <>
                     {n.origin === 'agent' && !n.root && <span className="spark">✦</span>}
                     {n.star && <span className="spark">★</span>}
+                    {discussedIds.has(n.id) && <span className="spark" data-testid="discuss-badge">💬</span>}
                     <span className="text">{n.text || ' '}</span>
                     {n.fog && <span className="fogtag">🌫 わからない</span>}
                   </>
@@ -459,6 +496,13 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
                     )}
                     <button type="button" onClick={() => startEdit(n)} data-testid="node-start-edit">
                       ✏
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => markDiscuss(n)}
+                      data-testid="node-discuss"
+                    >
+                      💬
                     </button>
                     {!n.root && (
                       <button

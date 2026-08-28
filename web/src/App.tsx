@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { FogMap } from './types';
+import type { FogMap, MapNode } from './types';
 import { getMap, addNodeHuman, editNodeHuman, recordHumanAction, StaleTokenError, type HumanActionType } from './api';
 import { subscribeLive } from './live';
 import { resolveCanvasId } from './canvasBootstrap';
@@ -149,6 +149,16 @@ function App() {
     }
   };
 
+  /**
+   * Marks a node as the conversation's focus. This never touches the map
+   * itself (no readToken/write involved) — it's purely a humanAction log
+   * entry for the agent to notice on its next tool call.
+   */
+  const handleDiscuss = (node: MapNode) => {
+    if (!id) return;
+    void recordHumanAction(id, 'discuss', { nodeId: node.id });
+  };
+
   return (
     <>
       <div className="brand">
@@ -164,7 +174,7 @@ function App() {
       </div>
 
       {map ? (
-        <FogMapCanvas nodes={map.nodes} onAdd={handleAdd} onEdit={handleEdit} />
+        <FogMapCanvas nodes={map.nodes} onAdd={handleAdd} onEdit={handleEdit} onDiscuss={handleDiscuss} />
       ) : (
         <div className="empty-hint" role="status">
           <div className="big">読み込み中…</div>

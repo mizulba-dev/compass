@@ -193,3 +193,47 @@ func TestMoveActionsCollapseToLatestPerNode(t *testing.T) {
 		t.Fatalf("want one action for each of node a and node b, got %+v", row.ActionsPending)
 	}
 }
+
+// TestDiscussActionIsDeliveredAndCollapses is the standing falsification
+// probe for the discuss mechanism: a "discuss" humanAction must actually
+// reach the agent on the next read, and repeated clicks on the same node
+// must collapse to one pending action rather than queuing up.
+func TestDiscussActionIsDeliveredAndCollapses(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	id, err := s.Create(ctx, json.RawMessage(`{"nodes":[]}`))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if err := s.RecordHumanAction(ctx, id, "discuss", json.RawMessage(`{"nodeId":"a"}`)); err != nil {
+		t.Fatalf("RecordHumanAction: %v", err)
+	}
+	if err := s.RecordHumanAction(ctx, id, "discuss", json.RawMessage(`{"nodeId":"a"}`)); err != nil {
+		t.Fatalf("RecordHumanAction: %v", err)
+	}
+	if err := s.RecordHumanAction(ctx, id, "discuss", json.RawMessage(`{"nodeId":"a"}`)); err != nil {
+		t.Fatalf("RecordHumanAction: %v", err)
+	}
+
+	row, err := s.ReadAndDeliver(ctx, id)
+	if err != nil {
+		t.Fatalf("ReadAndDeliver: %v", err)
+	}
+	if len(row.ActionsPending) != 1 {
+		t.Fatalf("3 discuss clicks on the same node: want 1 collapsed pending action, got %d: %+v", len(row.ActionsPending), row.ActionsPending)
+	}
+	if row.ActionsPending[0].Type != "discuss" {
+		t.Fatalf("want type discuss, got %s", row.ActionsPending[0].Type)
+	}
+
+	// Delivered once — a second consecutive read must not redeliver it.
+	second, err := s.ReadAndDeliver(ctx, id)
+	if err != nil {
+		t.Fatalf("ReadAndDeliver (2nd): %v", err)
+	}
+	if len(second.ActionsPending) != 0 {
+		t.Fatalf("2nd consecutive read: want 0 (already delivered), got %d", len(second.ActionsPending))
+	}
+}

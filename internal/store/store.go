@@ -244,15 +244,16 @@ func (s *Store) RecordHumanAction(ctx context.Context, id, actionType string, da
 		}
 	}
 
-	// "move" actions fire continuously while a node is dragged. Collapsing
-	// them to the latest one per node keeps the agent's next tool result
-	// from carrying a queue of stale intermediate positions — only where
-	// the node ended up matters.
-	if actionType == "move" {
+	// "move" actions fire continuously while a node is dragged, and
+	// "discuss" can be clicked repeatedly on the same node. Both collapse
+	// to the latest one per node: for move, only where the node ended up
+	// matters; for discuss, repeated clicks are the same request repeated,
+	// not a queue of separate ones.
+	if actionType == "move" || actionType == "discuss" {
 		if nodeID := actionNodeID(data); nodeID != "" {
 			kept := pending[:0]
 			for _, a := range pending {
-				if a.Type == "move" && actionNodeID(a.Data) == nodeID {
+				if a.Type == actionType && actionNodeID(a.Data) == nodeID {
 					continue
 				}
 				kept = append(kept, a)
