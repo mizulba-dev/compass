@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { MapNode } from '../types';
 
 export interface AddNodeInput {
@@ -548,24 +549,40 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
         </div>
       )}
 
-      <div className="zoomer">
-        <button type="button" aria-label="拡大" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1.2)}>＋</button>
-        <button type="button" aria-label="縮小" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1 / 1.2)}>－</button>
-        <button type="button" aria-label="全体表示" style={{ fontSize: '.7rem' }} onClick={fit}>⌂</button>
-      </div>
+      {/*
+        Portalled straight to document.body: these are `position: fixed`
+        and must stay pinned to the viewport regardless of any ancestor
+        that might one day gain a `transform`/`filter`/`will-change:
+        transform` (any of which turns it into the containing block for
+        fixed descendants, per the CSS spec — that's what silently drags
+        `position: fixed` children along with a pan/zoom transform
+        elsewhere in the tree). A portal makes viewport-pinning true by
+        construction, not just true as long as nobody adds such a property
+        upstream of these components.
+      */}
+      {createPortal(
+        <>
+          <div className="zoomer">
+            <button type="button" aria-label="拡大" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1.2)}>＋</button>
+            <button type="button" aria-label="縮小" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1 / 1.2)}>－</button>
+            <button type="button" aria-label="全体表示" style={{ fontSize: '.7rem' }} onClick={fit}>⌂</button>
+          </div>
 
-      <button
-        type="button"
-        className="add-fab"
-        aria-label="ノードを追加"
-        data-testid="add-node-fab"
-        onClick={() => {
-          const p = toWorld(window.innerWidth / 2, window.innerHeight / 2);
-          void placeFreeNode(p.x, p.y);
-        }}
-      >
-        ＋
-      </button>
+          <button
+            type="button"
+            className="add-fab"
+            aria-label="ノードを追加"
+            data-testid="add-node-fab"
+            onClick={() => {
+              const p = toWorld(window.innerWidth / 2, window.innerHeight / 2);
+              void placeFreeNode(p.x, p.y);
+            }}
+          >
+            ＋
+          </button>
+        </>,
+        document.body,
+      )}
     </>
   );
 }

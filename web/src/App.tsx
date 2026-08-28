@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { FogMap, MapNode } from './types';
 import { getMap, addNodeHuman, editNodeHuman, recordHumanAction, StaleTokenError, type HumanActionType } from './api';
 import { subscribeLive } from './live';
@@ -161,18 +162,6 @@ function App() {
 
   return (
     <>
-      <div className="brand">
-        霧の地図
-        <p className="webmcp-status" data-testid="webmcp-status" role={errorMessage ? 'alert' : undefined}>
-          {errorMessage ?? webmcpStatusText(webmcpStatus)}
-        </p>
-      </div>
-      <div className="hint-bar">
-        click: 子を生やす ／ drag: 移動
-        <br />
-        dblclick: 編集 ／ 右クリック・長押し: メニュー
-      </div>
-
       {map ? (
         <FogMapCanvas nodes={map.nodes} onAdd={handleAdd} onEdit={handleEdit} onDiscuss={handleDiscuss} />
       ) : (
@@ -181,19 +170,39 @@ function App() {
         </div>
       )}
 
-      {map?.harvest && (
-        <button
-          type="button"
-          className="harvest-fab"
-          aria-label="収穫を見る"
-          data-testid="harvest-fab"
-          onClick={() => setSheetOpen(true)}
-        >
-          ⇣ 収穫
-        </button>
-      )}
+      {/* Portalled to document.body: all `position: fixed` chrome, kept out
+          of any ancestor that could someday gain a transform (see the same
+          note in FogMapCanvas.tsx). */}
+      {createPortal(
+        <>
+          <div className="brand">
+            霧の地図
+            <p className="webmcp-status" data-testid="webmcp-status" role={errorMessage ? 'alert' : undefined}>
+              {errorMessage ?? webmcpStatusText(webmcpStatus)}
+            </p>
+          </div>
+          <div className="hint-bar">
+            click: 子を生やす ／ drag: 移動
+            <br />
+            dblclick: 編集 ／ 右クリック・長押し: メニュー
+          </div>
 
-      <HarvestSheet harvest={map?.harvest ?? null} open={sheetOpen} onClose={() => setSheetOpen(false)} />
+          {map?.harvest && (
+            <button
+              type="button"
+              className="harvest-fab"
+              aria-label="収穫を見る"
+              data-testid="harvest-fab"
+              onClick={() => setSheetOpen(true)}
+            >
+              ⇣ 収穫
+            </button>
+          )}
+
+          <HarvestSheet harvest={map?.harvest ?? null} open={sheetOpen} onClose={() => setSheetOpen(false)} />
+        </>,
+        document.body,
+      )}
     </>
   );
 }
