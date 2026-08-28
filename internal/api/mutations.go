@@ -140,7 +140,7 @@ func estimateHeight(text string) float64 {
 	return 40 + (lines-1)*22
 }
 
-func estimateRect(x, y float64, text string) rect {
+func estimateWidth(text string) float64 {
 	width := textInkWidth(text) + 40
 	if width > nodeMaxWidth {
 		width = nodeMaxWidth
@@ -148,7 +148,11 @@ func estimateRect(x, y float64, text string) rect {
 	if width < 40 {
 		width = 40
 	}
-	return rect{x0: x, y0: y, x1: x + width, y1: y + estimateHeight(text)}
+	return width
+}
+
+func estimateRect(x, y float64, text string) rect {
+	return rect{x0: x, y0: y, x1: x + estimateWidth(text), y1: y + estimateHeight(text)}
 }
 
 func rectsOverlap(a, b rect) bool {
@@ -190,17 +194,17 @@ func avoidCollisionsExcluding(m *MapData, excludeID string, x, y float64, text s
 	return x, y
 }
 
-// layoutDepthStepRight/Left mirror childPos's own literals (280px right /
-// 260px left per depth level) — relayout is a full-tree generalization of
-// the same placement rule childPos already applies node-by-node at
-// creation time. verticalGap is the breathing room relayout leaves between
-// two vertically-stacked leaves, on top of each leaf's own estimated
-// height (see subtreeHeight) — unlike x spacing, this can't be a fixed row
-// height, since wrapped multi-line text needs more room than a one-liner.
+// horizontalGap is the breathing room relayout leaves between a parent's
+// edge and its child's edge — not a fixed center-to-center offset, since a
+// fixed offset ignores how wide either node's estimated footprint actually
+// is (a wide parent or child then overlaps or touches the other with zero
+// gap; see estimateWidth). verticalGap is the same idea for two vertically-
+// stacked leaves, on top of each leaf's own estimated height (see
+// subtreeHeight) — wrapped multi-line text needs more room than a one-
+// liner, so this can't be a fixed row height either.
 const (
-	layoutDepthStepRight = 280.0
-	layoutDepthStepLeft  = 260.0
-	verticalGap          = 16.0
+	horizontalGap = 48.0
+	verticalGap   = 16.0
 )
 
 func findRootNode(m *MapData) *Node {
@@ -239,19 +243,23 @@ func subtreeHeight(m *MapData, node *Node) float64 {
 // added or removed, by either the agent or the human) — layout ownership
 // belongs to the engine, not the human: a drag is honored until the next
 // structural change, at which point it's absorbed back into the tidy
-// layout like everything else. x is purely parent-relative — the same
-// +280/-260 step childPos uses for a single new node — so every child stays
-// directly adjacent to its actual parent. y is assigned per top branch
-// (root's direct children): each branch reserves an exact contiguous pixel
-// band (see subtreeHeight) on its side (left/right), stacked below the
-// previous same-side branch's band, so no two top branches' bands ever
-// interleave, overlap, or cross edges. Within a band, a leaf's y is its
-// place in a top-aligned cumulative stack (its own estimated height plus
-// verticalGap advances the cursor for the next sibling) and an internal
-// node centers over its own children's y. A final pass nudges any node
-// down out of any remaining overlap — a safety net for the gap between
-// estimateHeight's prediction and however a given browser actually wraps
-// the text — mirroring the single-node guard in avoidCollisionsExcluding.
+// layout like everything else. x is edge-relative: a child sits
+// horizontalGap past its actual parent's near edge (the parent's right
+// edge for a right-growing child, the child's own right edge butted up
+// against the parent's left edge for a left-growing one) — using each
+// node's real estimated width, not a fixed center-to-center offset, so a
+// wide parent or child can never end up touching or overlapping the other
+// (see estimateWidth). y is assigned per top branch (root's direct
+// children): each branch reserves an exact contiguous pixel band (see
+// subtreeHeight) on its side (left/right), stacked below the previous
+// same-side branch's band, so no two top branches' bands ever interleave,
+// overlap, or cross edges. Within a band, a leaf's y is its place in a
+// top-aligned cumulative stack (its own estimated height plus verticalGap
+// advances the cursor for the next sibling) and an internal node centers
+// over its own children's y. A final pass nudges any node down out of any
+// remaining overlap — a safety net for the gap between the estimates'
+// predictions and however a given browser actually renders the text —
+// mirroring the single-node guard in avoidCollisionsExcluding.
 func relayout(m *MapData) {
 	root := findRootNode(m)
 	if root == nil {
@@ -260,15 +268,16 @@ func relayout(m *MapData) {
 
 	var assignX func(parent *Node)
 	assignX = func(parent *Node) {
+		parentWidth := estimateWidth(parent.Text)
 		for _, child := range childrenOf(m, parent.ID) {
 			dir := child.Dir
 			if dir == 0 {
 				dir = 1
 			}
 			if dir > 0 {
-				child.X = parent.X + layoutDepthStepRight
+				child.X = parent.X + parentWidth + horizontalGap
 			} else {
-				child.X = parent.X - layoutDepthStepLeft
+				child.X = parent.X - horizontalGap - estimateWidth(child.Text)
 			}
 			assignX(child)
 		}

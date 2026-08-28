@@ -357,6 +357,17 @@ func estimatedRectFor(x, y float64, text string) estimatedRect {
 	return estimatedRect{x0: x, y0: y, x1: x + width, y1: y + height}
 }
 
+// estimatedWidthFor is estimatedRectFor's width alone, for adjacency
+// assertions against relayout's edge-relative x (see horizontalGapFor).
+func estimatedWidthFor(text string) float64 {
+	r := estimatedRectFor(0, 0, text)
+	return r.x1 - r.x0
+}
+
+// horizontalGapFor mirrors mutations.go's horizontalGap: the fixed gap
+// relayout leaves between a parent's near edge and its child's near edge.
+const horizontalGapFor = 48.0
+
 func rectsOverlap(a, b estimatedRect) bool {
 	return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0
 }
@@ -920,19 +931,23 @@ func TestRelayoutAbsorbsHumanDragsAndKeepsTopBranchesDisjoint(t *testing.T) {
 	}
 
 	// (1) Every non-root node — including the dragged one — sits exactly
-	// +280/-260 from its actual parent.
+	// horizontalGapFor past its actual parent's near edge, using each
+	// node's real estimated width (not a fixed center-to-center offset).
 	for id, n := range byID {
 		if n["parent"] == nil {
 			continue // root
 		}
 		parent := byID[n["parent"].(string)]
-		dx := n["x"].(float64) - parent["x"].(float64)
-		want := 280.0
+		parentWidth := estimatedWidthFor(parent["text"].(string))
+		var gap float64
 		if n["dir"].(float64) < 0 {
-			want = -260.0
+			childWidth := estimatedWidthFor(n["text"].(string))
+			gap = parent["x"].(float64) - (n["x"].(float64) + childWidth)
+		} else {
+			gap = n["x"].(float64) - (parent["x"].(float64) + parentWidth)
 		}
-		if dx != want {
-			t.Fatalf("node %s: want x offset from parent %v, got %v", id, want, dx)
+		if gap != horizontalGapFor {
+			t.Fatalf("node %s: want edge gap %v from parent, got %v", id, horizontalGapFor, gap)
 		}
 	}
 	if byID[branchAChildID]["x"].(float64) == 9999 {
@@ -1062,13 +1077,16 @@ func TestTidyRelayoutsOnDemand(t *testing.T) {
 			branch = n
 		}
 	}
-	dx := branch["x"].(float64) - root["x"].(float64)
-	want := 280.0
+	rootWidth := estimatedWidthFor(root["text"].(string))
+	var gap float64
 	if branch["dir"].(float64) < 0 {
-		want = -260.0
+		branchWidth := estimatedWidthFor(branch["text"].(string))
+		gap = root["x"].(float64) - (branch["x"].(float64) + branchWidth)
+	} else {
+		gap = branch["x"].(float64) - (root["x"].(float64) + rootWidth)
 	}
-	if dx != want {
-		t.Fatalf("after tidy: want x offset from root %v, got %v", want, dx)
+	if gap != horizontalGapFor {
+		t.Fatalf("after tidy: want edge gap %v from root, got %v", horizontalGapFor, gap)
 	}
 	if branch["y"].(float64) != root["y"].(float64) {
 		t.Fatalf("after tidy: a single leaf branch should sit on root's own row, got y=%v (root y=%v)", branch["y"], root["y"])
@@ -1112,6 +1130,101 @@ func TestRelayoutGivesLongJapaneseSiblingsEnoughRoom(t *testing.T) {
 			if rectsOverlap(rects[i], rects[j]) {
 				t.Fatalf("long Japanese siblings %s and %s overlap: %+v vs %+v", ids[i], ids[j], rects[i], rects[j])
 			}
+		}
+	}
+}
+
+// TestRelayoutLeavesHorizontalGapForWideChain is the standing falsification
+// probe for the second reported bug: relayout used to place a child at a
+// fixed center-to-center x offset from its parent (+280/-260) regardless of
+// either node's actual width, so a wide (near max-width) node butted up
+// against — or fully overlapped — its parent horizontally, most visibly on
+// the left side where a 260px-wide child landed exactly at the parent's own
+// left edge. Reproduces a 3-level chain of max-width nodes on the left
+// side (root -> branch -> child -> grandchild, all dir<0) and requires
+// every parent/child pair to have exactly horizontalGapFor of clear space
+// between their near edges — not touching, not overlapping.
+func TestRelayoutLeavesHorizontalGapForWideChain(t *testing.T) {
+	h := newTestServer(t)
+	id := createCanvas(t, h)
+	rootID, token := placeRoot(t, h, id, "住宅購入")
+
+	wide1 := "絶対に譲れない条件は何ですか？（立地・広さ・性能・間取りなど）"
+	wide2 := "妥協してもよい条件はどれくらいありますか？（予算・築年数・駅からの距離など）"
+	wide3 := "住み替えのタイミングと引っ越し先の希望エリアを教えてください"
+
+	// First child of root: dir=1 (right). Second child: dir=-1 (left) —
+	// this is the one we chain leftward.
+	rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    rootID,
+		"nodes":     []map[string]any{{"text": "right filler"}, {"text": wide1}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add root children: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m := getMapNoDeliver(t, h, id)
+	token = m["readToken"].(string)
+	var leftBranchID string
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["text"] == wide1 {
+			leftBranchID = n["id"].(string)
+		}
+	}
+	if leftBranchID == "" {
+		t.Fatal("expected to find the left-side branch node")
+	}
+
+	rec = postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    leftBranchID,
+		"nodes":     []map[string]any{{"text": wide2}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add left child: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m = getMapNoDeliver(t, h, id)
+	token = m["readToken"].(string)
+	var leftChildID string
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["text"] == wide2 {
+			leftChildID = n["id"].(string)
+		}
+	}
+
+	rec = postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    leftChildID,
+		"nodes":     []map[string]any{{"text": wide3}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add left grandchild: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	final := getMapNoDeliver(t, h, id)
+	byID := map[string]map[string]any{}
+	for _, raw := range final["nodes"].([]any) {
+		n := raw.(map[string]any)
+		byID[n["id"].(string)] = n
+	}
+	for _, n := range byID {
+		if n["parent"] == nil {
+			continue
+		}
+		if n["dir"].(float64) >= 0 {
+			continue // only checking the left-growing chain here
+		}
+		parent := byID[n["parent"].(string)]
+		childWidth := estimatedWidthFor(n["text"].(string))
+		gap := parent["x"].(float64) - (n["x"].(float64) + childWidth)
+		if gap != horizontalGapFor {
+			t.Fatalf("node %v: want edge gap %v from parent, got %v (parent x=%v, node x=%v, node width=%v)",
+				n["id"], horizontalGapFor, gap, parent["x"], n["x"], childWidth)
+		}
+		if gap <= 0 {
+			t.Fatalf("node %v touches or overlaps its parent horizontally: gap=%v", n["id"], gap)
 		}
 	}
 }
