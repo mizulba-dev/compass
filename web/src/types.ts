@@ -1,4 +1,4 @@
-export type NodeKind = 'normal' | 'question';
+export type NodeKind = 'normal' | 'question' | 'task';
 export type NodeOrigin = 'human' | 'agent';
 
 export interface MapNode {
@@ -13,6 +13,7 @@ export interface MapNode {
   kind: NodeKind;
   fog: boolean;
   star: boolean;
+  done: boolean; // task-kind nodes only: true once completed
   origin: NodeOrigin;
   createdAt: string;
 }

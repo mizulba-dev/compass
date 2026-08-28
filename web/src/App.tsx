@@ -7,7 +7,7 @@ import { resolveCanvasId } from './canvasBootstrap';
 import { setMapUpdateListener, setWebMCPStatusListener, type WebMCPStatus } from './webmcp/register';
 import { FogMapCanvas, type AddNodeInput, type EditNodeInput } from './components/FogMapCanvas';
 import { HarvestSheet } from './components/HarvestSheet';
-import { Download } from 'lucide-react';
+import { ClipboardList } from 'lucide-react';
 
 function webmcpStatusText(status: WebMCPStatus): string {
   switch (status.state) {
@@ -146,6 +146,8 @@ function App() {
       await refreshAndRecord(input.fog ? 'fog' : 'unfog', { nodeId: input.id });
     } else if (input.star !== undefined) {
       await refreshAndRecord('star', { nodeId: input.id, star: input.star });
+    } else if (input.done !== undefined) {
+      await refreshAndRecord('done', { nodeId: input.id, done: input.done });
     } else if (input.text !== undefined) {
       await refreshAndRecord('edit', { nodeId: input.id, text: input.text });
     }
@@ -167,30 +169,25 @@ function App() {
       {createPortal(
         <>
           <div className="brand">
-            霧の地図
+            Compass
             <p className="webmcp-status" data-testid="webmcp-status" role={errorMessage ? 'alert' : undefined}>
               {errorMessage ?? webmcpStatusText(webmcpStatus)}
             </p>
-          </div>
-          <div className="hint-bar">
-            click: 子を生やす ／ drag: 移動
-            <br />
-            dblclick: 編集 ／ 右クリック・長押し: メニュー
           </div>
 
           {map?.harvest && (
             <button
               type="button"
               className="harvest-fab"
-              aria-label="収穫を見る"
+              aria-label="計画を見る"
               data-testid="harvest-fab"
               onClick={() => setSheetOpen(true)}
             >
-              <Download size={16} /> 収穫
+              <ClipboardList size={16} /> 計画
             </button>
           )}
 
-          <HarvestSheet harvest={map?.harvest ?? null} open={sheetOpen} onClose={() => setSheetOpen(false)} />
+          <HarvestSheet harvest={map?.harvest ?? null} nodes={map?.nodes ?? []} open={sheetOpen} onClose={() => setSheetOpen(false)} />
         </>,
         document.body,
       )}

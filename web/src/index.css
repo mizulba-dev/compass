@@ -100,6 +100,10 @@ body {
 .node:focus-visible { outline: 2px solid var(--node-color, var(--accent)); outline-offset: 2px; }
 .node.question { border-style: dashed; }
 .node.fogged { background: var(--fog-bg); border: 1.6px dashed var(--fog); color: var(--ink-soft); }
+.node.done { opacity: .55; }
+.node.done .text { text-decoration: line-through; }
+.node .task-check { display: inline-flex; margin-right: 5px; vertical-align: -2px; cursor: pointer; color: var(--ink-soft); }
+.node.done .task-check { color: var(--accent); }
 .node .spark { display: inline-flex; margin-right: 4px; opacity: .9; vertical-align: -1px; }
 .node .fogtag {
   display: flex; align-items: center; gap: 3px; font-size: .64rem; color: var(--fog);
@@ -183,12 +187,6 @@ body {
 @keyframes fab-in { from { transform: scale(.6); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .harvest-fab { animation: none; } }
 
-.hint-bar {
-  position: fixed; top: 14px; right: 16px; z-index: 50;
-  font-family: ui-monospace, monospace; font-size: .58rem; letter-spacing: .05em;
-  color: var(--ink-soft); text-align: right; line-height: 1.7;
-}
-
 .webmcp-status {
   margin: 2px 0 0; font-size: 11px; color: var(--ink-soft); opacity: .8;
   pointer-events: none;
@@ -213,6 +211,7 @@ body {
   background: var(--ground); border: 1px solid var(--node-edge); border-radius: 8px;
   padding: 7px 11px; font-size: .85rem;
 }
+.sheet li.done { text-decoration: line-through; opacity: .55; }
 .sheet .close {
   position: absolute; top: 12px; right: 12px; background: none; border: none;
   display: flex; cursor: pointer; color: var(--ink-soft);

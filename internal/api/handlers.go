@@ -34,9 +34,10 @@ type Node struct {
 	Root      bool    `json:"root,omitempty"`
 	Dir       int     `json:"dir,omitempty"` // which side of its parent this subtree grows on: 1 (right) or -1 (left)
 	Color     string  `json:"color,omitempty"`
-	Kind      string  `json:"kind"` // "normal" | "question"
+	Kind      string  `json:"kind"` // "normal" | "question" | "task"
 	Fog       bool    `json:"fog"`
 	Star      bool    `json:"star"`
+	Done      bool    `json:"done"` // task-kind nodes only: true once completed
 	Origin    string  `json:"origin"` // "human" | "agent"
 	CreatedAt string  `json:"createdAt"`
 	Pinned    bool    `json:"pinned,omitempty"` // true once a human has dragged it — auto-layout must never move it again

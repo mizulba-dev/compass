@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { HelpCircle, Pencil, Star, Trash2, Sparkles, Plus, Minus, Maximize } from 'lucide-react';
+import { HelpCircle, Pencil, Star, Trash2, Sparkles, Plus, Minus, Maximize, Square, CheckSquare } from 'lucide-react';
 import type { MapNode } from '../types';
 
 export interface AddNodeInput {
@@ -17,6 +17,7 @@ export interface EditNodeInput {
   y?: number;
   fog?: boolean;
   star?: boolean;
+  done?: boolean;
   delete?: boolean;
 }
 
@@ -24,7 +25,7 @@ interface FogMapCanvasProps {
   nodes: MapNode[];
   /** Adds a node placed directly by the human; resolves with the new node's id once persisted (or undefined if the write failed). */
   onAdd: (input: AddNodeInput) => Promise<string | undefined>;
-  /** Applies a human edit (move/fog/star/delete/text); resolves once persisted. */
+  /** Applies a human edit (move/fog/star/done/delete/text); resolves once persisted. */
   onEdit: (input: EditNodeInput) => Promise<void>;
 }
 
@@ -137,7 +138,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
 
   // Trackpad wheel/gesture handling is bound at the window level, not just
   // on .canvas: a pointer over any fixed chrome (zoom buttons, the + FAB,
-  // the brand/hint-bar corners) never reaches .canvas's own onWheel, so the
+  // the brand corner) never reaches .canvas's own onWheel, so the
   // browser's native pinch-to-zoom / elastic overscroll fires there instead
   // — which is what a "the whole page zoomed/bounced" report actually is,
   // not the portal fix from the previous batch (that one was real but
@@ -436,6 +437,8 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
               'node',
               n.root ? 'root' : '',
               n.kind === 'question' ? 'question' : '',
+              n.kind === 'task' ? 'task' : '',
+              n.kind === 'task' && n.done ? 'done' : '',
               n.fog ? 'fogged' : '',
               selectedId === n.id ? 'selected' : '',
               isEditing ? 'editing' : '',
@@ -492,6 +495,19 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
                   />
                 ) : (
                   <>
+                    {n.kind === 'task' && (
+                      <span
+                        className="task-check"
+                        data-testid="node-task-check"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void onEdit({ id: n.id, done: !n.done });
+                        }}
+                      >
+                        {n.done ? <CheckSquare size={14} /> : <Square size={14} />}
+                      </span>
+                    )}
                     {n.origin === 'agent' && !n.root && (
                       <span className="spark">
                         <Sparkles size={12} />

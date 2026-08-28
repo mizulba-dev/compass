@@ -190,7 +190,7 @@ function registerToolsOn(modelContext: ModelContext): void {
             type: 'object',
             properties: {
               text: { type: 'string' },
-              kind: { type: 'string', enum: ['normal', 'question'] },
+              kind: { type: 'string', enum: ['normal', 'question', 'task'] },
             },
             required: ['text'],
             additionalProperties: false,
@@ -212,6 +212,7 @@ function registerToolsOn(modelContext: ModelContext): void {
         id: { type: 'string' },
         text: { type: 'string' },
         unfog: { type: 'boolean', description: 'set true to clear this node\'s fog; there is no way to set fog on through this tool' },
+        done: { type: 'boolean', description: 'mark a task-kind node done (true) or reopen it (false)' },
       },
       required: ['id'],
       additionalProperties: false,

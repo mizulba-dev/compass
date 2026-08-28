@@ -175,7 +175,7 @@ type addNodesRequest struct {
 
 type addNodeInput struct {
 	Text string `json:"text"`
-	Kind string `json:"kind,omitempty"` // "normal" | "question"
+	Kind string `json:"kind,omitempty"` // "normal" | "question" | "task"
 }
 
 func applyAddNodes(m *MapData, body json.RawMessage) string {
@@ -199,8 +199,8 @@ func applyAddNodes(m *MapData, body json.RawMessage) string {
 			continue
 		}
 		kind := "normal"
-		if in.Kind == "question" {
-			kind = "question"
+		if in.Kind == "question" || in.Kind == "task" {
+			kind = in.Kind
 		}
 		x, y, dir := childPos(m, parent)
 		x, y = avoidCollisions(m, x, y, in.Text)
@@ -269,15 +269,16 @@ func applyAddNodeHuman(m *MapData, body json.RawMessage) string {
 }
 
 // updateNodeRequest backs POST /api/canvas/:id/node (update_node, the
-// agent-facing WebMCP tool). Only text and clearing fog: there is no field
-// here that could move, delete, or (re-)fog a node — those are human-only
-// (see nodeHumanRequest), and the decode surface enforces it, not just the
-// tool's inputSchema/description.
+// agent-facing WebMCP tool). Text, clearing fog, and toggling a task's done
+// flag — there is no field here that could move, delete, or (re-)fog a node
+// — those are human-only (see nodeHumanRequest), and the decode surface
+// enforces it, not just the tool's inputSchema/description.
 type updateNodeRequest struct {
 	tokenEnvelope
 	ID    string  `json:"id"`
 	Text  *string `json:"text,omitempty"`
 	Unfog bool    `json:"unfog,omitempty"`
+	Done  *bool   `json:"done,omitempty"`
 }
 
 func applyUpdateNode(m *MapData, body json.RawMessage) string {
@@ -294,6 +295,9 @@ func applyUpdateNode(m *MapData, body json.RawMessage) string {
 	}
 	if req.Unfog {
 		node.Fog = false
+	}
+	if req.Done != nil {
+		node.Done = *req.Done
 	}
 	return ""
 }
@@ -377,6 +381,7 @@ type nodeHumanRequest struct {
 	Y      *float64 `json:"y,omitempty"`
 	Fog    *bool    `json:"fog,omitempty"`
 	Star   *bool    `json:"star,omitempty"`
+	Done   *bool    `json:"done,omitempty"`
 	Delete bool     `json:"delete,omitempty"`
 }
 
@@ -409,6 +414,9 @@ func applyNodeHuman(m *MapData, body json.RawMessage) string {
 	}
 	if req.Star != nil {
 		node.Star = *req.Star
+	}
+	if req.Done != nil {
+		node.Done = *req.Done
 	}
 	return ""
 }

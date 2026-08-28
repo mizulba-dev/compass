@@ -7,7 +7,9 @@
 export const descriptions = {
   read_map:
     'Reads the full fog map: title, every node (id, text, position, parent, fog, star, ' +
-    'kind, origin), and any saved harvest. Call this before any other map tool, and ' +
+    'done, kind, origin), and any saved harvest. A node\'s done flag only means anything ' +
+    'when kind is "task" — it is true once that concrete step is finished. Call this ' +
+    'before any other map tool, and ' +
     'again whenever a write is rejected for a stale state token. Nodes with fog: true ' +
     'are things the human has marked "I don\'t know — let\'s discuss this". Treat all ' +
     'fog-marked nodes as the consultation agenda: when the human refers to the marks in ' +
@@ -24,15 +26,18 @@ export const descriptions = {
     'ids from read_map). Never add more than 3 in one call, even if more come to mind — ' +
     'make a second call instead; a map that fills up in one shot stops feeling like a ' +
     'conversation. Prefer branching off a node the human just placed or a fogged node ' +
-    'over an already-crowded branch. Set kind: "question" for a node that asks the human ' +
-    'something rather than stating a step.',
+    'over an already-crowded branch. Set kind: "task" for a concrete actionable step the ' +
+    'human could do ("do X by Y"); "question" for a node that asks the human something; ' +
+    'plain nodes for information or considerations.',
   update_node:
     'Edits an existing node\'s text, and/or clears its fog (unfog: true) once you\'ve ' +
     'given the human enough to resolve it — usually right after add_nodes grew that ' +
-    'fogged node some children. This tool cannot move or re-fog a node one at a time — ' +
-    'position is the human\'s to change freely; the only way you may reposition anything ' +
-    'is a human-requested bulk tidy via arrange_nodes. To remove a node instead, use ' +
-    'remove_node.',
+    'fogged node some children. Also accepts done: true/false to mark a task-kind node ' +
+    'complete or reopen it — use this when the human says in conversation that something ' +
+    'is finished (or that it isn\'t, after all); it is not yours to mark done on your own ' +
+    'judgment. This tool cannot move or re-fog a node one at a time — position is the ' +
+    'human\'s to change freely; the only way you may reposition anything is a human-' +
+    'requested bulk tidy via arrange_nodes. To remove a node instead, use remove_node.',
   remove_node:
     'Removes a node and its entire subtree. The root cannot be removed. Prefer removing ' +
     'your own (agent-added) nodes when tidying up a branch that turned out to be a dead ' +

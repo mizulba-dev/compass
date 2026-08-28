@@ -591,3 +591,91 @@ func TestArrangeNodesMovesAndAvoidsCollisions(t *testing.T) {
 		}
 	}
 }
+
+// TestTaskKindAndDoneRoundTrip is the standing falsification probe for the
+// task-node addition (direction addendum 5): add_nodes must accept kind:
+// "task" and default it to not done; both the agent's update_node and the
+// human's node/human endpoints must accept done: true/false and persist it;
+// and a "done" humanAction must round-trip through the delivery pipe like
+// any other action type.
+func TestTaskKindAndDoneRoundTrip(t *testing.T) {
+	h := newTestServer(t)
+	id := createCanvas(t, h)
+	rootID, token := placeRoot(t, h, id, "住宅購入")
+
+	rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    rootID,
+		"nodes":     []map[string]any{{"text": "頭金を貯める", "kind": "task"}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add_nodes: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m := getMapNoDeliver(t, h, id)
+	nodes := m["nodes"].([]any)
+	task := nodes[len(nodes)-1].(map[string]any)
+	taskID := task["id"].(string)
+	token = m["readToken"].(string)
+
+	if task["kind"] != "task" {
+		t.Fatalf("want kind task, got %v", task["kind"])
+	}
+	if task["done"] != false {
+		t.Fatalf("want a freshly added task node to start not done, got %v", task["done"])
+	}
+
+	// Agent-facing update_node accepts done: true.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/node", map[string]any{
+		"readToken": token,
+		"id":        taskID,
+		"done":      true,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update_node done:true: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m = getMapNoDeliver(t, h, id)
+	token = m["readToken"].(string)
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["id"] == taskID && n["done"] != true {
+			t.Fatalf("update_node done:true did not persist: %v", n["done"])
+		}
+	}
+
+	// Human-facing node/human accepts done: false (reopening the task).
+	rec = postJSON(t, h, "/api/canvas/"+id+"/node/human", map[string]any{
+		"readToken": token,
+		"id":        taskID,
+		"done":      false,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("node/human done:false: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m = getMapNoDeliver(t, h, id)
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["id"] == taskID && n["done"] != false {
+			t.Fatalf("node/human done:false did not persist: %v", n["done"])
+		}
+	}
+
+	// A "done" humanAction round-trips through the delivery pipe: delivered
+	// once, then not redelivered on a later read.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/human-actions", map[string]any{
+		"type": "done",
+		"data": map[string]any{"nodeId": taskID, "done": false},
+	})
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("record done human action: want 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+	first := getMap(t, h, id)
+	actions, _ := first["humanActions"].([]any)
+	if len(actions) != 1 || actions[0].(map[string]any)["type"] != "done" {
+		t.Fatalf("want 1 delivered humanAction of type done, got %v", first["humanActions"])
+	}
+	second := getMap(t, h, id)
+	actions2, _ := second["humanActions"].([]any)
+	if len(actions2) != 0 {
+		t.Fatalf("2nd consecutive read: want 0 human actions (no re-delivery), got %d", len(actions2))
+	}
+}
