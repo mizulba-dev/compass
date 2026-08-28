@@ -99,11 +99,23 @@ body {
 .node.editing { outline: 2px solid var(--node-color, var(--accent)); outline-offset: 2px; }
 .node:focus-visible { outline: 2px solid var(--node-color, var(--accent)); outline-offset: 2px; }
 .node.question { border-style: dashed; }
+/* Task nodes read as tasks even zoomed way out: a tinted fill in the
+   branch color plus a solid colored border gives them a colored surface,
+   where plain nodes stay white cards and questions stay dashed. */
+.node.task {
+  background: color-mix(in srgb, var(--node-color, var(--accent)) 14%, var(--node-bg));
+  border-color: var(--node-color, var(--accent));
+  border-radius: 6px;
+}
+.node.task.done {
+  background: color-mix(in srgb, var(--ink) 6%, var(--node-bg));
+  border-color: var(--node-edge);
+}
 .node.fogged { background: var(--fog-bg); border: 1.6px dashed var(--fog); color: var(--ink-soft); }
 .node.done { opacity: .55; }
 .node.done .text { text-decoration: line-through; }
-.node .task-check { display: inline-flex; margin-right: 5px; vertical-align: -2px; cursor: pointer; color: var(--ink-soft); }
-.node.done .task-check { color: var(--accent); }
+.node .task-check { display: inline-flex; margin-right: 5px; vertical-align: -2px; cursor: pointer; color: var(--node-color, var(--accent)); }
+.node.done .task-check { color: var(--ink-soft); }
 .node .spark { display: inline-flex; margin-right: 4px; opacity: .9; vertical-align: -1px; }
 .node .fogtag {
   display: flex; align-items: center; gap: 3px; font-size: .64rem; color: var(--fog);
