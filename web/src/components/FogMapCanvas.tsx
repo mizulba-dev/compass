@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { HelpCircle, Pencil, Star, Trash2, Sparkles, Plus, Minus, Maximize, Square, CheckSquare } from 'lucide-react';
+import { HelpCircle, Pencil, Star, Trash2, Sparkles, Plus, Minus, Maximize, Square, CheckSquare, LayoutGrid } from 'lucide-react';
 import type { MapNode, NodeKind } from '../types';
 
 export interface AddNodeInput {
@@ -28,6 +28,8 @@ interface FogMapCanvasProps {
   onAdd: (input: AddNodeInput) => Promise<string | undefined>;
   /** Applies a human edit (move/fog/star/done/kind/delete/text); resolves once persisted. */
   onEdit: (input: EditNodeInput) => Promise<void>;
+  /** Runs an immediate relayout (the Tidy button) — resolves once persisted. */
+  onTidy: () => Promise<void>;
 }
 
 interface View {
@@ -70,7 +72,7 @@ function childPos(nodes: MapNode[], parent: MapNode): { x: number; y: number } {
 }
 
 
-export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
+export function FogMapCanvas({ nodes, onAdd, onEdit, onTidy }: FogMapCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
@@ -615,6 +617,9 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
             </button>
             <button type="button" aria-label="Fit to view" onClick={fit}>
               <Maximize size={15} />
+            </button>
+            <button type="button" aria-label="Tidy up" data-testid="tidy-button" onClick={() => void onTidy()}>
+              <LayoutGrid size={15} />
             </button>
           </div>
 

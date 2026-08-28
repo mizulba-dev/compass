@@ -85,6 +85,16 @@ export async function editNodeHuman(
   return postWrite(`/api/canvas/${id}/node/human`, { readToken, ...edit });
 }
 
+/**
+ * Runs an immediate relayout. Relayout otherwise only fires automatically
+ * on a structural change (a node added or removed) — this is the manual
+ * "tidy up now" for a drag with no such follow-up. No WebMCP tool calls
+ * this, and it isn't recorded as a humanAction.
+ */
+export async function tidyMap(id: string, readToken: string): Promise<{ readToken: string }> {
+  return postWrite(`/api/canvas/${id}/tidy`, { readToken });
+}
+
 export type HumanActionType = 'add' | 'edit' | 'move' | 'delete' | 'fog' | 'unfog' | 'star' | 'done';
 
 /** Records a human edit for the agent to notice on its next tool call. */

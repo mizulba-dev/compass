@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -777,20 +778,28 @@ func TestUpdateNodeKindConversionResetsDone(t *testing.T) {
 	}
 }
 
-// TestRelayoutKeepsChildrenAdjacentAndRespectsPinnedNodes is the standing
-// falsification probe for direction addendum 7's "always tidy" layout pass:
-// after add_nodes grows 3 branches with 3 children each, every child must
-// still sit directly adjacent to its actual parent (+280px right-side /
-// -260px left-side, matching childPos's own single-node placement rule —
-// see TestAddNodesAvoidsOverlapAcrossBranches for the accompanying no-
-// overlap guarantee over the same shape). And once a node has been dragged
-// by the human (Pinned), a later add_nodes call elsewhere in the map must
-// leave that node's coordinates untouched.
-func TestRelayoutKeepsChildrenAdjacentAndRespectsPinnedNodes(t *testing.T) {
+// TestRelayoutAbsorbsHumanDragsAndKeepsTopBranchesDisjoint is the standing
+// falsification probe for direction addendum 8: layout ownership belongs to
+// the engine, not to whoever last moved a node. It reproduces the real
+// usage pattern that motivated the change — 3 branches grown across 3
+// separate turns, with a human drag of one node interleaved between them —
+// and requires that in the final state:
+//  1. every non-root node sits exactly +280px (right) or -260px (left) from
+//     its actual parent, INCLUDING the node the human dragged — a plain
+//     move is only honored until the next structural change, then it's
+//     absorbed back into the tidy layout like everything else;
+//  2. no two node footprints overlap (same invariant as
+//     TestAddNodesAvoidsOverlapAcrossBranches, over a shape now grown
+//     across multiple turns with a drag in between); and
+//  3. each top branch's own subtree occupies a y-range disjoint from every
+//     other top branch's — i.e. branches are stacked in contiguous bands,
+//     never interleaved, so edges between different branches can't cross.
+func TestRelayoutAbsorbsHumanDragsAndKeepsTopBranchesDisjoint(t *testing.T) {
 	h := newTestServer(t)
 	id := createCanvas(t, h)
 	rootID, token := placeRoot(t, h, id, "考えたいこと")
 
+	// Turn 1: 3 top branches off the root.
 	rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
 		"readToken": token,
 		"parent":    rootID,
@@ -812,93 +821,227 @@ func TestRelayoutKeepsChildrenAdjacentAndRespectsPinnedNodes(t *testing.T) {
 			branchIDs = append(branchIDs, n["id"].(string))
 		}
 	}
+	if len(branchIDs) != 3 {
+		t.Fatalf("want 3 branches, got %d", len(branchIDs))
+	}
 
-	for i, branchID := range branchIDs {
-		rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
-			"readToken": token,
-			"parent":    branchID,
-			"nodes": []map[string]any{
-				{"text": "child 1"},
-				{"text": "child 2"},
-				{"text": "child 3"},
-			},
-		})
-		if rec.Code != http.StatusOK {
-			t.Fatalf("add children of branch %d: want 200, got %d: %s", i, rec.Code, rec.Body.String())
+	// Turn 2: 3 children under branch A only.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    branchIDs[0],
+		"nodes":     []map[string]any{{"text": "A child 1"}, {"text": "A child 2"}, {"text": "A child 3"}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add children of branch A: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m = getMapNoDeliver(t, h, id)
+	token = m["readToken"].(string)
+	var branchAChildID string
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["parent"] == branchIDs[0] {
+			branchAChildID = n["id"].(string)
+			break
 		}
-		m = getMapNoDeliver(t, h, id)
-		token = m["readToken"].(string)
+	}
+	if branchAChildID == "" {
+		t.Fatal("expected at least one child of branch A")
+	}
+
+	// Interleaved human drag: move a branch-A child far away — this must
+	// NOT survive the next structural change.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/node/human", map[string]any{
+		"readToken": token,
+		"id":        branchAChildID,
+		"x":         9999,
+		"y":         -9999,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("drag branch A child: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m = getMapNoDeliver(t, h, id)
+	token = m["readToken"].(string)
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["id"] == branchAChildID && (n["x"].(float64) != 9999 || n["y"].(float64) != -9999) {
+			t.Fatalf("drag did not take effect immediately: got (%v,%v)", n["x"], n["y"])
+		}
+	}
+
+	// Turn 3: 3 children under branch B — a structural change elsewhere,
+	// which must relayout the WHOLE map, absorbing the branch-A drag too.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    branchIDs[1],
+		"nodes":     []map[string]any{{"text": "B child 1"}, {"text": "B child 2"}, {"text": "B child 3"}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add children of branch B: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	final := getMapNoDeliver(t, h, id)
+	finalNodes := final["nodes"].([]any)
+	if len(finalNodes) != 10 { // root + 3 branches + 3 (A) + 3 (B)
+		t.Fatalf("want 10 nodes total, got %d", len(finalNodes))
 	}
 	byID := map[string]map[string]any{}
-	for _, raw := range m["nodes"].([]any) {
+	for _, raw := range finalNodes {
 		n := raw.(map[string]any)
 		byID[n["id"].(string)] = n
 	}
-	if len(byID) != 13 { // root + 3 branches + 3*3 children
-		t.Fatalf("want 13 nodes total, got %d", len(byID))
-	}
 
-	// Every non-root node must be exactly +280 (dir>0) or -260 (dir<0) in x
-	// from its actual parent.
+	// (1) Every non-root node — including the dragged one — sits exactly
+	// +280/-260 from its actual parent.
 	for id, n := range byID {
 		if n["parent"] == nil {
 			continue // root
 		}
 		parent := byID[n["parent"].(string)]
 		dx := n["x"].(float64) - parent["x"].(float64)
-		dir := n["dir"].(float64)
 		want := 280.0
-		if dir < 0 {
+		if n["dir"].(float64) < 0 {
 			want = -260.0
 		}
 		if dx != want {
-			t.Fatalf("node %s: want x offset from parent %v, got %v (parent=%v, node=%v)", id, want, dx, parent["x"], n["x"])
+			t.Fatalf("node %s: want x offset from parent %v, got %v", id, want, dx)
+		}
+	}
+	if byID[branchAChildID]["x"].(float64) == 9999 {
+		t.Fatal("dragged node's x survived a later structural change — layout must absorb drags")
+	}
+
+	// (2) No two node footprints overlap.
+	var rects []estimatedRect
+	for _, n := range byID {
+		rects = append(rects, estimatedRectFor(n["x"].(float64), n["y"].(float64), n["text"].(string)))
+	}
+	for i := 0; i < len(rects); i++ {
+		for j := i + 1; j < len(rects); j++ {
+			if rectsOverlap(rects[i], rects[j]) {
+				t.Fatalf("footprints overlap: %+v vs %+v", rects[i], rects[j])
+			}
 		}
 	}
 
-	// Pin one deep node by moving it (human), then trigger another relayout
-	// via add_nodes elsewhere: the pinned node's coordinates must survive.
-	var pinnedID string
-	for id, n := range byID {
-		if n["parent"] != nil && byID[n["parent"].(string)]["parent"] != nil {
-			pinnedID = id // a grandchild-of-root (has a non-root parent)
-			break
+	// (3) Each top branch's own subtree occupies a y-range disjoint from
+	// every other top branch's.
+	subtreeYRange := func(rootID string) (minY, maxY float64) {
+		minY, maxY = math.Inf(1), math.Inf(-1)
+		var walk func(id string)
+		walk = func(id string) {
+			n := byID[id]
+			y := n["y"].(float64)
+			if y < minY {
+				minY = y
+			}
+			if y > maxY {
+				maxY = y
+			}
+			for cid, c := range byID {
+				if c["parent"] == id {
+					walk(cid)
+				}
+			}
+		}
+		walk(rootID)
+		return
+	}
+	// Only branches on the SAME side can possibly have crossing edges —
+	// opposite-side branches are mirrored around the root and never
+	// interact, so their y-ranges are free to overlap.
+	type yrange struct {
+		id       string
+		dir      float64
+		min, max float64
+	}
+	var ranges []yrange
+	for _, bid := range branchIDs {
+		min, max := subtreeYRange(bid)
+		ranges = append(ranges, yrange{bid, byID[bid]["dir"].(float64), min, max})
+	}
+	for i := 0; i < len(ranges); i++ {
+		for j := i + 1; j < len(ranges); j++ {
+			a, b := ranges[i], ranges[j]
+			sameSide := (a.dir < 0) == (b.dir < 0)
+			if sameSide && a.min <= b.max && b.min <= a.max {
+				t.Fatalf("same-side top branches %s and %s have overlapping y-ranges: [%v,%v] vs [%v,%v]", a.id, b.id, a.min, a.max, b.min, b.max)
+			}
 		}
 	}
-	if pinnedID == "" {
-		t.Fatal("expected at least one grandchild-of-root node to pin")
+}
+
+// TestTidyRelayoutsOnDemand is the standing falsification probe for the
+// manual Tidy button: a drag with no follow-up structural change leaves the
+// map looking untidy (relayout only fires automatically on add/remove), and
+// POST /tidy must be the on-demand fix — after calling it, the dragged
+// node must be back at its tidy position, not off wherever it was dropped.
+func TestTidyRelayoutsOnDemand(t *testing.T) {
+	h := newTestServer(t)
+	id := createCanvas(t, h)
+	rootID, token := placeRoot(t, h, id, "考えたいこと")
+
+	rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    rootID,
+		"nodes":     []map[string]any{{"text": "branch A"}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add branch: want 200, got %d: %s", rec.Code, rec.Body.String())
 	}
+	m := getMapNoDeliver(t, h, id)
+	token = m["readToken"].(string)
+	var branchID string
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["id"] != rootID {
+			branchID = n["id"].(string)
+		}
+	}
+
+	// Drag it away — no structural change follows, so it must stay put.
 	rec = postJSON(t, h, "/api/canvas/"+id+"/node/human", map[string]any{
 		"readToken": token,
-		"id":        pinnedID,
+		"id":        branchID,
 		"x":         9999,
 		"y":         -9999,
 	})
 	if rec.Code != http.StatusOK {
-		t.Fatalf("pin node via move: want 200, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("drag: want 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	m = getMapNoDeliver(t, h, id)
 	token = m["readToken"].(string)
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["id"] == branchID && (n["x"].(float64) != 9999 || n["y"].(float64) != -9999) {
+			t.Fatalf("drag without a structural change should not be reflowed on its own: got (%v,%v)", n["x"], n["y"])
+		}
+	}
 
-	rec = postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
-		"readToken": token,
-		"parent":    rootID,
-		"nodes":     []map[string]any{{"text": "branch D, added after pinning"}},
-	})
+	// Tidy: an on-demand relayout, with no add/remove involved.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/tidy", map[string]any{"readToken": token})
 	if rec.Code != http.StatusOK {
-		t.Fatalf("add another branch after pinning: want 200, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("tidy: want 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	final := getMapNoDeliver(t, h, id)
+	var root, branch map[string]any
 	for _, raw := range final["nodes"].([]any) {
 		n := raw.(map[string]any)
-		if n["id"] == pinnedID {
-			if n["x"].(float64) != 9999 || n["y"].(float64) != -9999 {
-				t.Fatalf("pinned node moved by a later add_nodes relayout: want (9999,-9999), got (%v,%v)", n["x"], n["y"])
-			}
-			if n["pinned"] != true {
-				t.Fatalf("want pinned:true on a human-moved node, got %v", n["pinned"])
-			}
+		if n["id"] == rootID {
+			root = n
+		} else if n["id"] == branchID {
+			branch = n
 		}
+	}
+	dx := branch["x"].(float64) - root["x"].(float64)
+	want := 280.0
+	if branch["dir"].(float64) < 0 {
+		want = -260.0
+	}
+	if dx != want {
+		t.Fatalf("after tidy: want x offset from root %v, got %v", want, dx)
+	}
+	if branch["y"].(float64) != root["y"].(float64) {
+		t.Fatalf("after tidy: a single leaf branch should sit on root's own row, got y=%v (root y=%v)", branch["y"], root["y"])
 	}
 }

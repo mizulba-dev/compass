@@ -40,7 +40,6 @@ type Node struct {
 	Done      bool    `json:"done"` // task-kind nodes only: true once completed
 	Origin    string  `json:"origin"` // "human" | "agent"
 	CreatedAt string  `json:"createdAt"`
-	Pinned    bool    `json:"pinned,omitempty"` // true once a human has dragged it — auto-layout must never move it again
 }
 
 type Harvest struct {
@@ -80,6 +79,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/canvas/{id}/node/remove", a.writeHandler(applyRemoveNode))
 	mux.HandleFunc("POST /api/canvas/{id}/node/human", a.writeHandler(applyNodeHuman))
 	mux.HandleFunc("POST /api/canvas/{id}/harvest", a.writeHandler(applyHarvest))
+	mux.HandleFunc("POST /api/canvas/{id}/tidy", a.writeHandler(applyTidy))
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

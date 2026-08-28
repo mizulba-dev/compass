@@ -110,9 +110,10 @@ func rectsOverlap(a, b rect) bool {
 
 // avoidCollisions nudges a newly proposed position straight down until its
 // estimated footprint clears every existing node's — including nodes on
-// other branches, not just siblings. It only ever moves the new node: an
-// existing node (server-placed or human-pinned) is never repositioned by
-// this or any other path, so a human's placement is permanent.
+// other branches, not just siblings. It only ever moves the new node being
+// placed; every other node keeps its current position for this call (any
+// of them may still be repositioned moments later by relayout, since layout
+// ownership belongs to the engine, not to whoever placed a node last).
 func avoidCollisions(m *MapData, x, y float64, text string) (float64, float64) {
 	return avoidCollisionsExcluding(m, "", x, y, text)
 }
@@ -161,20 +162,39 @@ func findRootNode(m *MapData) *Node {
 	return nil
 }
 
-// relayout re-tidies the whole map after a structural change (a node added
-// or removed): every node that isn't the root and hasn't been dragged by a
-// human (Pinned) gets a fresh position. x is purely parent-relative — the
-// same +280/-260 step childPos uses for a single new node — so every child
-// stays directly adjacent to its actual parent regardless of where an
-// ancestor was pinned. y is assigned bottom-up, independently for the left
-// and right halves of the tree: a leaf takes the next row in its side's
-// running sequence (64px apart) and an internal node centers over its own
-// children's y, so growth on one branch never reflows a sibling branch. A
-// pinned node keeps its real position but still consumes a row slot, so
-// siblings around it are spaced as if it were there. A final pass nudges
-// any movable node down out of any remaining overlap — including with a
-// pinned node's footprint, which this step is the only thing that actually
-// respects as an obstacle — mirroring the single-node guard in
+// subtreeLeafCount counts the leaves under node (a childless node counts as
+// one leaf of itself). relayout uses this to reserve each top branch an
+// exact, contiguous row band sized to its own shape, computed up front
+// rather than left to emerge from call order — so two branches on the same
+// side can never end up with interleaved rows regardless of how many
+// separate add_nodes/remove_node turns grew them.
+func subtreeLeafCount(m *MapData, node *Node) int {
+	kids := childrenOf(m, node.ID)
+	if len(kids) == 0 {
+		return 1
+	}
+	count := 0
+	for _, k := range kids {
+		count += subtreeLeafCount(m, k)
+	}
+	return count
+}
+
+// relayout re-tidies the whole map after any structural change (a node
+// added or removed, by either the agent or the human) — layout ownership
+// belongs to the engine, not the human: a drag is honored until the next
+// structural change, at which point it's absorbed back into the tidy
+// layout like everything else. x is purely parent-relative — the same
+// +280/-260 step childPos uses for a single new node — so every child stays
+// directly adjacent to its actual parent. y is assigned per top branch
+// (root's direct children): each branch reserves an exact contiguous row
+// band (see subtreeLeafCount) on its side (left/right), stacked below the
+// previous same-side branch's band, so no two top branches' rows ever
+// interleave or their edges cross. Within a band, a leaf takes the next row
+// (64px apart) and an internal node centers over its own children's y. A
+// final pass nudges any node down out of any remaining overlap — a safety
+// net for node footprints wider than the standard row spacing (long-
+// wrapped text) — mirroring the single-node guard in
 // avoidCollisionsExcluding.
 func relayout(m *MapData) {
 	root := findRootNode(m)
@@ -185,54 +205,51 @@ func relayout(m *MapData) {
 	var assignX func(parent *Node)
 	assignX = func(parent *Node) {
 		for _, child := range childrenOf(m, parent.ID) {
-			if !child.Pinned {
-				dir := child.Dir
-				if dir == 0 {
-					dir = 1
-				}
-				if dir > 0 {
-					child.X = parent.X + layoutDepthStepRight
-				} else {
-					child.X = parent.X - layoutDepthStepLeft
-				}
+			dir := child.Dir
+			if dir == 0 {
+				dir = 1
+			}
+			if dir > 0 {
+				child.X = parent.X + layoutDepthStepRight
+			} else {
+				child.X = parent.X - layoutDepthStepLeft
 			}
 			assignX(child)
 		}
 	}
 	assignX(root)
 
-	nextRow := map[int]int{}
-	var assignY func(node *Node) float64
-	assignY = func(node *Node) float64 {
+	var assignY func(node *Node, rowStart int) float64
+	assignY = func(node *Node, rowStart int) float64 {
 		kids := childrenOf(m, node.ID)
 		if len(kids) == 0 {
-			dir := node.Dir
-			if dir == 0 {
-				dir = 1
-			}
-			row := nextRow[dir]
-			nextRow[dir] = row + 1
-			if !node.Pinned {
-				node.Y = root.Y + float64(row)*layoutRowHeight
-			}
+			node.Y = root.Y + float64(rowStart)*layoutRowHeight
 			return node.Y
 		}
 		sum := 0.0
+		cursor := rowStart
 		for _, child := range kids {
-			sum += assignY(child)
+			sum += assignY(child, cursor)
+			cursor += subtreeLeafCount(m, child)
 		}
-		if !node.Pinned {
-			node.Y = sum / float64(len(kids))
-		}
+		node.Y = sum / float64(len(kids))
 		return node.Y
 	}
-	for _, child := range childrenOf(m, root.ID) {
-		assignY(child)
+
+	nextRowForSide := map[int]int{}
+	for _, branch := range childrenOf(m, root.ID) {
+		dir := branch.Dir
+		if dir == 0 {
+			dir = 1
+		}
+		start := nextRowForSide[dir]
+		assignY(branch, start)
+		nextRowForSide[dir] = start + subtreeLeafCount(m, branch)
 	}
 
 	for i := range m.Nodes {
 		n := &m.Nodes[i]
-		if n.Root || n.Pinned {
+		if n.Root {
 			continue
 		}
 		n.X, n.Y = avoidCollisionsExcluding(m, n.ID, n.X, n.Y, n.Text)
@@ -367,6 +384,7 @@ func applyAddNodeHuman(m *MapData, body json.RawMessage) string {
 		node.Root = true
 	}
 	m.Nodes = append(m.Nodes, node)
+	relayout(m)
 	return ""
 }
 
@@ -514,6 +532,7 @@ func applyNodeHuman(m *MapData, body json.RawMessage) string {
 	}
 	if req.Delete {
 		removeSubtree(m, req.ID)
+		relayout(m)
 		return ""
 	}
 	if req.Kind != nil && !isValidNodeKind(*req.Kind) {
@@ -525,11 +544,9 @@ func applyNodeHuman(m *MapData, body json.RawMessage) string {
 	}
 	if req.X != nil {
 		node.X = *req.X
-		node.Pinned = true
 	}
 	if req.Y != nil {
 		node.Y = *req.Y
-		node.Pinned = true
 	}
 	if req.Fog != nil {
 		node.Fog = *req.Fog
@@ -550,6 +567,18 @@ func applyNodeHuman(m *MapData, body json.RawMessage) string {
 }
 
 // harvestRequest backs POST /api/canvas/:id/harvest (harvest, the
+// applyTidy backs POST /api/canvas/:id/tidy: an immediate, human-triggered
+// relayout. Since relayout only fires automatically on a structural change
+// (a node added or removed), a drag with no such follow-up leaves the map
+// looking untidy until one happens — this endpoint is the manual "reset
+// now" for that gap. No WebMCP tool calls this; it's not recorded as a
+// humanAction, since it doesn't reveal anything about the human's judgment
+// the agent needs to react to.
+func applyTidy(m *MapData, _ json.RawMessage) string {
+	relayout(m)
+	return ""
+}
+
 // agent-facing WebMCP tool): folds the grown map into a plan. The map
 // itself is untouched — harvest is a summary, not a mutation of nodes.
 type harvestRequest struct {

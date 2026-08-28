@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { FogMap } from './types';
-import { getMap, addNodeHuman, editNodeHuman, recordHumanAction, StaleTokenError, type HumanActionType } from './api';
+import { getMap, addNodeHuman, editNodeHuman, recordHumanAction, tidyMap, StaleTokenError, type HumanActionType } from './api';
 import { subscribeLive } from './live';
 import { resolveCanvasId } from './canvasBootstrap';
 import { setMapUpdateListener, setWebMCPStatusListener, type WebMCPStatus } from './webmcp/register';
@@ -155,10 +155,19 @@ function App() {
     }
   };
 
+  const handleTidy = async () => {
+    await writeWithStaleTokenRetry((readToken) => tidyMap(id!, readToken));
+    if (id) {
+      const fresh = await getMap(id);
+      setMap(fresh);
+      readTokenRef.current = fresh.readToken;
+    }
+  };
+
   return (
     <>
       {map ? (
-        <FogMapCanvas nodes={map.nodes} onAdd={handleAdd} onEdit={handleEdit} />
+        <FogMapCanvas nodes={map.nodes} onAdd={handleAdd} onEdit={handleEdit} onTidy={handleTidy} />
       ) : (
         <div className="empty-hint" role="status">
           <div className="big">Loading…</div>

@@ -44,23 +44,25 @@ export const descriptions = {
     'judgment. Convert a node\'s kind (e.g. kind: "task" when the human asks to turn ' +
     'steps into tasks, or "question"/"normal") — done resets to false whenever a node ' +
     'stops being a task, since a completion flag on a non-task node means nothing. This ' +
-    'tool cannot move or re-fog a node one at a time — position is the human\'s to change ' +
-    'freely; the only way you may reposition anything is a human-requested bulk tidy via ' +
-    'arrange_nodes. To remove a node instead, use remove_node.',
+    'tool cannot move or re-fog a node one at a time — the server automatically retidies ' +
+    'the whole map\'s layout after every add_nodes/remove_node call, so you never need to ' +
+    'position anything yourself; arrange_nodes exists only for a specific ordering the ' +
+    'human explicitly asks for. To remove a node instead, use remove_node.',
   remove_node:
     'Removes a node and its entire subtree. The root cannot be removed. Prefer removing ' +
     'your own (agent-added) nodes when tidying up a branch that turned out to be a dead ' +
     'end; ask the human in conversation before removing nodes they placed — their ' +
     'judgment about what stays on the map is not yours to override unilaterally.',
   arrange_nodes:
-    'Repositions nodes in bulk, tidying up the map\'s layout. Only use this when the ' +
-    'human explicitly asks you to tidy, arrange, or organize the map (e.g. "can you ' +
-    'clean this up?") — never rearrange nodes on your own initiative just because the ' +
-    'layout looks messy to you; a map you\'re free to reflow at will stops feeling like ' +
-    'the human\'s own space. Read the map first, then propose coordinates that keep each ' +
-    'branch\'s nodes spatially grouped together (not scattered) and close to their parent. ' +
-    'You don\'t need to avoid overlaps yourself — send your best-guess coordinates and the ' +
-    'server corrects them so nothing ends up on top of anything else.',
+    'Repositions nodes in bulk to a SPECIFIC ordering. The server already retidies the ' +
+    'whole map automatically after every add_nodes/remove_node call, so you never need ' +
+    'this just to keep the layout clean — use it only when the human explicitly asks for ' +
+    'a particular arrangement the automatic tidy wouldn\'t produce on its own (e.g. "put ' +
+    'the most important ones at the top" or "group these three together"). Never call it ' +
+    'on your own initiative just because the layout looks messy; the automatic tidy ' +
+    'already handles that. Read the map first, then propose coordinates matching what the ' +
+    'human asked for — you don\'t need to avoid overlaps yourself, the server corrects ' +
+    'your coordinates so nothing ends up on top of anything else.',
   harvest:
     'Folds the grown map into a plan: one goal, the premises the human has established ' +
     '(their own nodes, not yours), and the next concrete tasks. Before calling this, make ' +
