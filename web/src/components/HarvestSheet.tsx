@@ -31,11 +31,16 @@ export function HarvestSheet({ harvest, nodes, open, onClose }: HarvestSheetProp
           </ul>
           <h3>NEXT TASKS</h3>
           <ul>
-            {taskNodes.map((n) => (
-              <li key={n.id} className={n.done ? 'done' : undefined}>
-                {n.text}
-              </li>
-            ))}
+            {taskNodes.length > 0
+              ? taskNodes.map((n) => (
+                  <li key={n.id} className={n.done ? 'done' : undefined}>
+                    {n.text}
+                  </li>
+                ))
+              : // Maps whose plan predates task nodes have their tasks only in
+                // the harvest snapshot — fall back to it rather than showing
+                // an empty list.
+                harvest.tasks.map((t, i) => <li key={i}>{t}</li>)}
           </ul>
         </>
       ) : (
