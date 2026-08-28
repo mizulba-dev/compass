@@ -1,5 +1,5 @@
-import type { Canvas } from './types';
-import { getCanvas } from './api';
+import type { FogMap } from './types';
+import { getMap } from './api';
 
 const POLL_INTERVAL_MS = 5000;
 /**
@@ -23,7 +23,7 @@ const SSE_RETRY_DELAY_MS = 3000;
  * event for them. Since the server's heartbeat is exactly such a comment
  * line, only manual parsing lets receiving one reset the stall timer.
  */
-export function subscribeLive(id: string, onSnapshot: (canvas: Canvas) => void): () => void {
+export function subscribeLive(id: string, onSnapshot: (map: FogMap) => void): () => void {
   let stopped = false;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let stallTimer: ReturnType<typeof setTimeout> | null = null;
@@ -38,7 +38,7 @@ export function subscribeLive(id: string, onSnapshot: (canvas: Canvas) => void):
   const startPolling = () => {
     if (pollTimer) return;
     pollTimer = setInterval(() => {
-      getCanvas(id).then(onSnapshot).catch(() => {});
+      getMap(id).then(onSnapshot).catch(() => {});
     }, POLL_INTERVAL_MS);
   };
 
@@ -91,7 +91,7 @@ export function subscribeLive(id: string, onSnapshot: (canvas: Canvas) => void):
           const dataLine = frame.split('\n').find((line) => line.startsWith('data:'));
           if (!dataLine) continue; // heartbeat comment or other non-data frame
           try {
-            onSnapshot(JSON.parse(dataLine.slice(5).trim()) as Canvas);
+            onSnapshot(JSON.parse(dataLine.slice(5).trim()) as FogMap);
           } catch {
             // Ignore a malformed frame; the next one resyncs the view.
           }

@@ -1,38 +1,26 @@
-export interface Goal {
-  title: string;
-  deadline?: string;
-  why?: string;
-}
+export type NodeKind = 'normal' | 'question';
+export type NodeOrigin = 'human' | 'agent';
 
-export interface CurrentState {
-  summary: string;
-  updatedAt: string;
-}
-
-export interface Gap {
+export interface MapNode {
   id: string;
   text: string;
-  resolved: boolean;
+  x: number;
+  y: number;
+  parent: string | null;
+  root?: boolean;
+  dir?: number; // 1 (right) or -1 (left) — which side this subtree grows on
+  color?: string;
+  kind: NodeKind;
+  fog: boolean;
+  star: boolean;
+  origin: NodeOrigin;
+  createdAt: string;
 }
 
-export interface Task {
-  id: string;
-  text: string;
-  day: string | null;
-  order: number;
-  done: boolean;
-  origin: 'agent' | 'human';
-}
-
-export interface Policy {
-  id: string;
-  text: string;
-  derivedFrom: string;
-}
-
-export interface SessionLogEntry {
-  at: string;
-  summary: string;
+export interface Harvest {
+  goal: string;
+  premises: string[];
+  tasks: string[];
 }
 
 export interface HumanAction {
@@ -42,14 +30,11 @@ export interface HumanAction {
   at: string;
 }
 
-export interface Canvas {
+export interface FogMap {
   id: string;
-  goal: Goal | null;
-  current: CurrentState | null;
-  gaps: Gap[];
-  tasks: Task[];
-  policies: Policy[];
-  sessions: SessionLogEntry[];
+  title: string;
+  nodes: MapNode[];
+  harvest: Harvest | null;
   readToken: string;
   humanActions: HumanAction[];
 }

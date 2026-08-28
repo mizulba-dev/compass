@@ -1,14 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Canvas, Task } from './types';
-import { getCanvas, updateTasks, editTasksHuman, recordHumanAction, StaleTokenError } from './api';
+import type { FogMap } from './types';
+import { getMap, addNodeHuman, editNodeHuman, recordHumanAction, StaleTokenError, type HumanActionType } from './api';
 import { subscribeLive } from './live';
 import { resolveCanvasId } from './canvasBootstrap';
-import { setCanvasUpdateListener, setWebMCPStatusListener, type WebMCPStatus } from './webmcp/register';
-import { GoalCard } from './components/GoalCard';
-import { CurrentCard } from './components/CurrentCard';
-import { GapChips } from './components/GapChips';
-import { PlanList } from './components/PlanList';
-import { PolicyList } from './components/PolicyList';
+import { setMapUpdateListener, setWebMCPStatusListener, type WebMCPStatus } from './webmcp/register';
+import { FogMapCanvas, type AddNodeInput, type EditNodeInput } from './components/FogMapCanvas';
+import { HarvestSheet } from './components/HarvestSheet';
 
 function webmcpStatusText(status: WebMCPStatus): string {
   switch (status.state) {
@@ -23,13 +20,14 @@ function webmcpStatusText(status: WebMCPStatus): string {
 
 function App() {
   const [id, setId] = useState<string | null>(null);
-  const [canvas, setCanvas] = useState<Canvas | null>(null);
-  const [connected, setConnected] = useState(false);
+  const [map, setMap] = useState<FogMap | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [webmcpStatus, setWebmcpStatus] = useState<WebMCPStatus>({ state: 'waiting' });
+  const [sheetOpen, setSheetOpen] = useState(false);
   const readTokenRef = useRef('');
+  const hadHarvestRef = useRef(false);
 
-  // Page-level status, independent of which canvas is loaded — connect as
+  // Page-level status, independent of which map is loaded — connect as
   // soon as this component exists so devtools-less hosts (ChatGPT's in-app
   // browser) have something on screen to diagnose registration with.
   useEffect(() => {
@@ -54,38 +52,47 @@ function App() {
     if (!id) return;
     let cancelled = false;
 
-    getCanvas(id).then((c) => {
+    getMap(id).then((m) => {
       if (!cancelled) {
-        setCanvas(c);
-        readTokenRef.current = c.readToken;
+        setMap(m);
+        readTokenRef.current = m.readToken;
       }
     });
 
-    const unsubscribe = subscribeLive(id, (c) => {
-      setCanvas(c);
-      readTokenRef.current = c.readToken;
-      setConnected(true);
+    const unsubscribe = subscribeLive(id, (m) => {
+      setMap(m);
+      readTokenRef.current = m.readToken;
     });
 
     // Tools are already registered (see main.tsx, before this component
     // even mounted) — just connect this instance as their UI sink.
-    setCanvasUpdateListener((c) => {
-      setCanvas(c);
-      readTokenRef.current = c.readToken;
+    setMapUpdateListener((m) => {
+      setMap(m);
+      readTokenRef.current = m.readToken;
     });
 
     return () => {
       cancelled = true;
       unsubscribe();
-      setCanvasUpdateListener(null);
+      setMapUpdateListener(null);
     };
   }, [id]);
 
+  // Open the harvest sheet automatically the moment the agent produces one
+  // — this is the payoff moment ("the map folds into a plan"), not
+  // something the human should have to go find a button for.
+  useEffect(() => {
+    if (map?.harvest && !hadHarvestRef.current) {
+      hadHarvestRef.current = true;
+      setSheetOpen(true);
+    }
+  }, [map?.harvest]);
+
   /**
    * Runs a write, retrying once with a freshly re-read token if the human's
-   * click raced a stale readToken (e.g. the agent wrote in between). On a
-   * second failure, surfaces an English message on the status line instead
-   * of failing silently.
+   * action raced a stale readToken (e.g. the agent wrote in between). On a
+   * second failure, surfaces an English message on the footer instead of
+   * failing silently.
    */
   const writeWithStaleTokenRetry = async (
     write: (readToken: string) => Promise<{ readToken: string }>,
@@ -102,7 +109,7 @@ function App() {
         return false;
       }
       try {
-        const fresh = await getCanvas(id);
+        const fresh = await getMap(id);
         readTokenRef.current = fresh.readToken;
         const { readToken } = await write(fresh.readToken);
         readTokenRef.current = readToken;
@@ -115,87 +122,72 @@ function App() {
     }
   };
 
-  const applyTaskUpdate = async (
-    task: Task,
-    write: (readToken: string) => Promise<{ readToken: string }>,
-    actionType: 'task.toggle' | 'task.reorder' | 'task.delete',
-    actionData: Record<string, unknown>,
-  ) => {
+  const refreshAndRecord = async (actionType: HumanActionType, data: unknown) => {
     if (!id) return;
-    const ok = await writeWithStaleTokenRetry(write);
-    if (!ok) return;
-    const fresh = await getCanvas(id);
-    setCanvas(fresh);
+    const fresh = await getMap(id);
+    setMap(fresh);
     readTokenRef.current = fresh.readToken;
-    await recordHumanAction(id, actionType, { taskId: task.id, ...actionData });
+    await recordHumanAction(id, actionType, data);
   };
 
-  const handleToggle = (task: Task) =>
-    applyTaskUpdate(
-      task,
-      (readToken) => updateTasks(id!, readToken, [{ id: task.id, done: !task.done }]),
-      'task.toggle',
-      { done: !task.done },
-    );
+  const handleAdd = async (input: AddNodeInput) => {
+    if (!id) return;
+    const beforeIds = new Set((map?.nodes ?? []).map((n) => n.id));
+    const ok = await writeWithStaleTokenRetry((readToken) => addNodeHuman(id, readToken, input));
+    if (!ok) return;
+    const fresh = await getMap(id);
+    setMap(fresh);
+    readTokenRef.current = fresh.readToken;
+    const created = fresh.nodes.find((n) => !beforeIds.has(n.id));
+    await recordHumanAction(id, 'add', { nodeId: created?.id, text: input.text, parent: input.parent ?? null });
+  };
 
-  const handleDelete = (task: Task) =>
-    applyTaskUpdate(
-      task,
-      (readToken) => editTasksHuman(id!, readToken, [{ id: task.id, delete: true }]),
-      'task.delete',
-      { delete: true },
-    );
-
-  const handleMove = (task: Task, direction: 'up' | 'down') => {
-    if (!canvas) return;
-    const sorted = [...canvas.tasks].sort((a, b) => a.order - b.order);
-    const idx = sorted.findIndex((t) => t.id === task.id);
-    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return;
-    const other = sorted[swapIdx];
-    const a = task.order;
-    const b = other.order;
-    void applyTaskUpdate(
-      task,
-      (readToken) =>
-        editTasksHuman(id!, readToken, [
-          { id: task.id, order: b },
-          { id: other.id, order: a },
-        ]),
-      'task.reorder',
-      { order: b },
-    );
+  const handleEdit = async (input: EditNodeInput) => {
+    if (!id) return;
+    const ok = await writeWithStaleTokenRetry((readToken) => editNodeHuman(id, readToken, input));
+    if (!ok) return;
+    if (input.delete) {
+      await refreshAndRecord('delete', { nodeId: input.id });
+    } else if (input.x !== undefined || input.y !== undefined) {
+      await refreshAndRecord('move', { nodeId: input.id, x: input.x, y: input.y });
+    } else if (input.fog !== undefined) {
+      await refreshAndRecord(input.fog ? 'fog' : 'unfog', { nodeId: input.id });
+    } else if (input.star !== undefined) {
+      await refreshAndRecord('star', { nodeId: input.id, star: input.star });
+    } else if (input.text !== undefined) {
+      await refreshAndRecord('edit', { nodeId: input.id, text: input.text });
+    }
   };
 
   return (
     <>
-      <header className="app-header">
-        <span className="app-name">COMPASS</span>
-      </header>
+      <div className="brand">霧の地図</div>
+      <div className="hint-bar">drag: 移動 ／ dblclick: 編集・追加</div>
 
-      {!canvas ? (
-        <div className="status-line" role="status">
-          Loading canvas…
-        </div>
+      {map ? (
+        <FogMapCanvas nodes={map.nodes} onAdd={handleAdd} onEdit={handleEdit} />
       ) : (
-        <>
-          <GoalCard goal={canvas.goal} tasks={canvas.tasks} />
-          <CurrentCard current={canvas.current} />
-          <GapChips gaps={canvas.gaps} />
-          <PlanList tasks={canvas.tasks} onToggle={handleToggle} onDelete={handleDelete} onMove={handleMove} />
-          <PolicyList policies={canvas.policies} />
-
-          <p className="status-line" data-testid="live-status" role={errorMessage ? 'alert' : undefined}>
-            {errorMessage ?? (connected ? 'Live' : 'Syncing…')}
-          </p>
-        </>
+        <div className="empty-hint" role="status">
+          <div className="big">読み込み中…</div>
+        </div>
       )}
 
-      <footer className="app-footer">
-        <p className="status-line" data-testid="webmcp-status">
-          {webmcpStatusText(webmcpStatus)}
-        </p>
-      </footer>
+      <button
+        type="button"
+        className="harvest-fab"
+        aria-label="収穫を見る"
+        data-testid="harvest-fab"
+        disabled={!map?.harvest}
+        onClick={() => setSheetOpen(true)}
+      >
+        ⇣
+      </button>
+
+      <HarvestSheet harvest={map?.harvest ?? null} open={sheetOpen} onClose={() => setSheetOpen(false)} />
+
+      <p className="footer-status" data-testid="webmcp-status" role={errorMessage ? 'alert' : undefined}>
+        {errorMessage ?? webmcpStatusText(webmcpStatus)}
+      </p>
     </>
   );
 }

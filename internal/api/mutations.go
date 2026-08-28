@@ -1,245 +1,310 @@
 package api
 
-import (
-	"encoding/json"
-	"time"
-)
+import "encoding/json"
 
-// setGoalRequest backs POST /api/canvas/:id/goal (the set_goal WebMCP tool).
-type setGoalRequest struct {
-	tokenEnvelope
-	Title    string `json:"title"`
-	Deadline string `json:"deadline,omitempty"`
-	Why      string `json:"why,omitempty"`
-}
+var colorPalette = []string{"#F0731F", "#E8489B", "#D9A514", "#57A345", "#2D9BB5", "#7A5AF8"}
 
-func applyGoal(canvas *Canvas, body json.RawMessage) string {
-	var req setGoalRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		return "invalid JSON body"
-	}
-	if req.Title == "" {
-		return "title is required"
-	}
-	canvas.Goal = &Goal{Title: req.Title, Deadline: req.Deadline, Why: req.Why}
-	return ""
-}
-
-// setCurrentRequest backs POST /api/canvas/:id/current (set_current).
-type setCurrentRequest struct {
-	tokenEnvelope
-	Summary string `json:"summary"`
-}
-
-func applyCurrent(canvas *Canvas, body json.RawMessage) string {
-	var req setCurrentRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		return "invalid JSON body"
-	}
-	if req.Summary == "" {
-		return "summary is required"
-	}
-	canvas.Current = &Current{Summary: req.Summary, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
-	return ""
-}
-
-// upsertGapsRequest backs POST /api/canvas/:id/gaps (upsert_gaps): add new
-// gap texts and/or mark existing gap ids resolved.
-type upsertGapsRequest struct {
-	tokenEnvelope
-	Add     []string `json:"add,omitempty"`
-	Resolve []string `json:"resolve,omitempty"`
-}
-
-func applyGaps(canvas *Canvas, body json.RawMessage) string {
-	var req upsertGapsRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		return "invalid JSON body"
-	}
-	resolved := make(map[string]bool, len(req.Resolve))
-	for _, id := range req.Resolve {
-		resolved[id] = true
-	}
-	for i := range canvas.Gaps {
-		if resolved[canvas.Gaps[i].ID] {
-			canvas.Gaps[i].Resolved = true
+func findNodeIndex(m *MapData, id string) int {
+	for i := range m.Nodes {
+		if m.Nodes[i].ID == id {
+			return i
 		}
 	}
-	for _, text := range req.Add {
-		if text == "" {
-			continue
-		}
-		canvas.Gaps = append(canvas.Gaps, Gap{ID: newLocalID(), Text: text, Resolved: false})
+	return -1
+}
+
+func findNode(m *MapData, id string) *Node {
+	i := findNodeIndex(m, id)
+	if i < 0 {
+		return nil
 	}
-	return ""
+	return &m.Nodes[i]
 }
 
-// planTasksRequest backs POST /api/canvas/:id/tasks/plan (plan_tasks). Every
-// task in Tasks is treated as newly proposed by the agent: existing tasks
-// (matched by id) keep their persisted order, and only tasks with unknown or
-// empty ids are appended at the end in the given sequence.
-type planTasksRequest struct {
+func childrenOf(m *MapData, parentID string) []*Node {
+	var out []*Node
+	for i := range m.Nodes {
+		if m.Nodes[i].Parent != nil && *m.Nodes[i].Parent == parentID {
+			out = append(out, &m.Nodes[i])
+		}
+	}
+	return out
+}
+
+// childPos mirrors the mock's childPos(): new children fan out to the
+// right of their parent (root's children alternate left/right), stacked
+// vertically among same-side siblings so they don't overlap.
+func childPos(m *MapData, parent *Node) (x, y float64, dir int) {
+	children := childrenOf(m, parent.ID)
+	if parent.Root {
+		if len(children)%2 == 0 {
+			dir = 1
+		} else {
+			dir = -1
+		}
+	} else if parent.Dir != 0 {
+		dir = parent.Dir
+	} else {
+		dir = 1
+	}
+
+	if dir > 0 {
+		x = parent.X + 280
+	} else {
+		x = parent.X - 260
+	}
+
+	sameSide := 0
+	for _, k := range children {
+		if (k.X > parent.X) == (dir > 0) {
+			sameSide++
+		}
+	}
+	y = parent.Y - 20 + float64(sameSide)*64
+	return x, y, dir
+}
+
+// colorFor mirrors the mock's color inheritance: a direct child of the root
+// gets the next color in the palette (cycling by how many root-children
+// already exist); any other node inherits its parent's branch color.
+func colorFor(m *MapData, parent *Node) string {
+	if parent.Root {
+		count := len(childrenOf(m, parent.ID))
+		return colorPalette[count%len(colorPalette)]
+	}
+	return parent.Color
+}
+
+func removeSubtree(m *MapData, id string) {
+	toRemove := map[string]bool{id: true}
+	// Repeatedly sweep for children of anything already marked, since a
+	// child can appear before or after its parent in the slice.
+	changed := true
+	for changed {
+		changed = false
+		for i := range m.Nodes {
+			n := &m.Nodes[i]
+			if n.Parent != nil && toRemove[*n.Parent] && !toRemove[n.ID] {
+				toRemove[n.ID] = true
+				changed = true
+			}
+		}
+	}
+	kept := m.Nodes[:0]
+	for _, n := range m.Nodes {
+		if !toRemove[n.ID] {
+			kept = append(kept, n)
+		}
+	}
+	m.Nodes = kept
+}
+
+// addNodesRequest backs POST /api/canvas/:id/nodes (add_nodes, the
+// agent-facing WebMCP tool). At most 3 nodes per call — a structural limit
+// against dumping a whole map in one shot — and every node needs an
+// existing parent: the human places the map's first (root) node, an agent
+// can only ever branch off something that already exists.
+type addNodesRequest struct {
 	tokenEnvelope
-	Tasks []planTaskInput `json:"tasks"`
+	Parent string         `json:"parent"`
+	Nodes  []addNodeInput `json:"nodes"`
 }
 
-type planTaskInput struct {
-	ID   string  `json:"id,omitempty"`
-	Text string  `json:"text"`
-	Day  *string `json:"day,omitempty"`
+type addNodeInput struct {
+	Text string `json:"text"`
+	Kind string `json:"kind,omitempty"` // "normal" | "question"
 }
 
-// applyPlanTasks preserves the persisted order of every existing task
-// (matched by id): only tasks whose id does not already exist are appended,
-// in the order given, after the current maximum order.
-func applyPlanTasks(canvas *Canvas, body json.RawMessage) string {
-	var req planTasksRequest
+func applyAddNodes(m *MapData, body json.RawMessage) string {
+	var req addNodesRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return "invalid JSON body"
 	}
-
-	existingByID := make(map[string]int, len(canvas.Tasks))
-	maxOrder := -1
-	for i, t := range canvas.Tasks {
-		existingByID[t.ID] = i
-		if t.Order > maxOrder {
-			maxOrder = t.Order
-		}
+	if len(req.Nodes) == 0 {
+		return "nodes must have at least 1 item"
+	}
+	if len(req.Nodes) > 3 {
+		return "nodes must have at most 3 items per call — add more in a follow-up call"
+	}
+	parent := findNode(m, req.Parent)
+	if parent == nil {
+		return "parent node not found: call read_map first and pass an existing node id as parent"
 	}
 
-	for _, in := range req.Tasks {
+	for _, in := range req.Nodes {
 		if in.Text == "" {
 			continue
 		}
-		if in.ID != "" {
-			if idx, ok := existingByID[in.ID]; ok {
-				// Existing task: update content only, order untouched.
-				canvas.Tasks[idx].Text = in.Text
-				canvas.Tasks[idx].Day = in.Day
-				continue
-			}
+		kind := "normal"
+		if in.Kind == "question" {
+			kind = "question"
 		}
-		maxOrder++
-		canvas.Tasks = append(canvas.Tasks, Task{
-			ID:     newLocalID(),
-			Text:   in.Text,
-			Day:    in.Day,
-			Order:  maxOrder,
-			Done:   false,
-			Origin: "agent",
+		x, y, dir := childPos(m, parent)
+		parentID := parent.ID
+		m.Nodes = append(m.Nodes, Node{
+			ID:        newLocalID(),
+			Text:      in.Text,
+			X:         x,
+			Y:         y,
+			Parent:    &parentID,
+			Dir:       dir,
+			Color:     colorFor(m, parent),
+			Kind:      kind,
+			Origin:    "agent",
+			CreatedAt: nowISO(),
 		})
 	}
 	return ""
 }
 
-// updateTasksRequest backs POST /api/canvas/:id/tasks/update (update_tasks).
-// This is the agent-facing WebMCP tool's endpoint and only ever accepts
-// Text/Done — reordering and deletion have no fields here at all, so there
-// is no server-side surface for an agent to move or remove a task even if
-// it ignores its tool's inputSchema.
-type updateTasksRequest struct {
+// addNodeHumanRequest backs POST /api/canvas/:id/nodes/human: a single
+// freely-placed node, added directly by the human on the canvas (double
+// click, or the + toolbar button). No count limit — humans can add as
+// freely as the mock's canvas allows. The very first node ever placed
+// becomes the map's root.
+type addNodeHumanRequest struct {
 	tokenEnvelope
-	Updates []taskUpdateInput `json:"updates"`
+	Text   string  `json:"text"`
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Parent *string `json:"parent,omitempty"`
 }
 
-type taskUpdateInput struct {
-	ID   string  `json:"id"`
-	Text *string `json:"text,omitempty"`
-	Done *bool   `json:"done,omitempty"`
-}
-
-func applyUpdateTasks(canvas *Canvas, body json.RawMessage) string {
-	var req updateTasksRequest
+func applyAddNodeHuman(m *MapData, body json.RawMessage) string {
+	var req addNodeHumanRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return "invalid JSON body"
 	}
-	byID := make(map[string]int, len(canvas.Tasks))
-	for i, t := range canvas.Tasks {
-		byID[t.ID] = i
+	node := Node{
+		ID:        newLocalID(),
+		Text:      req.Text,
+		X:         req.X,
+		Y:         req.Y,
+		Kind:      "normal",
+		Origin:    "human",
+		CreatedAt: nowISO(),
 	}
-	for _, u := range req.Updates {
-		idx, ok := byID[u.ID]
-		if !ok {
-			continue
+	if req.Parent != nil && *req.Parent != "" {
+		parent := findNode(m, *req.Parent)
+		if parent == nil {
+			return "parent node not found"
 		}
-		if u.Text != nil {
-			canvas.Tasks[idx].Text = *u.Text
+		parentID := parent.ID
+		node.Parent = &parentID
+		node.Color = colorFor(m, parent)
+		if req.X < parent.X {
+			node.Dir = -1
+		} else {
+			node.Dir = 1
 		}
-		if u.Done != nil {
-			canvas.Tasks[idx].Done = *u.Done
-		}
+	} else if len(m.Nodes) == 0 {
+		node.Root = true
+	}
+	m.Nodes = append(m.Nodes, node)
+	return ""
+}
+
+// updateNodeRequest backs POST /api/canvas/:id/node (update_node, the
+// agent-facing WebMCP tool). Only text and clearing fog: there is no field
+// here that could move, delete, or (re-)fog a node — those are human-only
+// (see nodeHumanRequest), and the decode surface enforces it, not just the
+// tool's inputSchema/description.
+type updateNodeRequest struct {
+	tokenEnvelope
+	ID    string  `json:"id"`
+	Text  *string `json:"text,omitempty"`
+	Unfog bool    `json:"unfog,omitempty"`
+}
+
+func applyUpdateNode(m *MapData, body json.RawMessage) string {
+	var req updateNodeRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		return "invalid JSON body"
+	}
+	node := findNode(m, req.ID)
+	if node == nil {
+		return "node not found"
+	}
+	if req.Text != nil {
+		node.Text = *req.Text
+	}
+	if req.Unfog {
+		node.Fog = false
 	}
 	return ""
 }
 
-// humanTaskEditRequest backs POST /api/canvas/:id/tasks/human. Reordering
-// and deletion are human-only affordances driven by direct canvas edits on
-// the page; they have no WebMCP tool and no path through /tasks/update.
-type humanTaskEditRequest struct {
+// nodeHumanRequest backs POST /api/canvas/:id/node/human: every node edit
+// reserved for the human (move, delete, toggle fog either way, star). No
+// WebMCP tool ever calls this endpoint.
+type nodeHumanRequest struct {
 	tokenEnvelope
-	Edits []humanTaskEditInput `json:"edits"`
+	ID     string   `json:"id"`
+	Text   *string  `json:"text,omitempty"`
+	X      *float64 `json:"x,omitempty"`
+	Y      *float64 `json:"y,omitempty"`
+	Fog    *bool    `json:"fog,omitempty"`
+	Star   *bool    `json:"star,omitempty"`
+	Delete bool     `json:"delete,omitempty"`
 }
 
-type humanTaskEditInput struct {
-	ID     string `json:"id"`
-	Order  *int   `json:"order,omitempty"`
-	Delete bool   `json:"delete,omitempty"`
-}
-
-func applyHumanTaskEdit(canvas *Canvas, body json.RawMessage) string {
-	var req humanTaskEditRequest
+func applyNodeHuman(m *MapData, body json.RawMessage) string {
+	var req nodeHumanRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return "invalid JSON body"
 	}
-	byID := make(map[string]int, len(canvas.Tasks))
-	for i, t := range canvas.Tasks {
-		byID[t.ID] = i
+	if findNode(m, req.ID) == nil {
+		return "node not found"
 	}
-	toDelete := make(map[string]bool)
-	for _, e := range req.Edits {
-		idx, ok := byID[e.ID]
-		if !ok {
-			continue
-		}
-		if e.Delete {
-			toDelete[e.ID] = true
-			continue
-		}
-		if e.Order != nil {
-			canvas.Tasks[idx].Order = *e.Order
-		}
+	if req.Delete {
+		removeSubtree(m, req.ID)
+		return ""
 	}
-	if len(toDelete) > 0 {
-		kept := canvas.Tasks[:0]
-		for _, t := range canvas.Tasks {
-			if !toDelete[t.ID] {
-				kept = append(kept, t)
-			}
-		}
-		canvas.Tasks = kept
+	node := findNode(m, req.ID)
+	if req.Text != nil {
+		node.Text = *req.Text
+	}
+	if req.X != nil {
+		node.X = *req.X
+	}
+	if req.Y != nil {
+		node.Y = *req.Y
+	}
+	if req.Fog != nil {
+		node.Fog = *req.Fog
+	}
+	if req.Star != nil {
+		node.Star = *req.Star
 	}
 	return ""
 }
 
-// addPolicyRequest backs POST /api/canvas/:id/policies (add_policy).
-type addPolicyRequest struct {
+// harvestRequest backs POST /api/canvas/:id/harvest (harvest, the
+// agent-facing WebMCP tool): folds the grown map into a plan. The map
+// itself is untouched — harvest is a summary, not a mutation of nodes.
+type harvestRequest struct {
 	tokenEnvelope
-	Text        string `json:"text"`
-	DerivedFrom string `json:"derivedFrom"`
+	Goal     string   `json:"goal"`
+	Premises []string `json:"premises"`
+	Tasks    []string `json:"tasks"`
 }
 
-func applyPolicy(canvas *Canvas, body json.RawMessage) string {
-	var req addPolicyRequest
+func applyHarvest(m *MapData, body json.RawMessage) string {
+	var req harvestRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return "invalid JSON body"
 	}
-	if req.Text == "" {
-		return "text is required"
+	if req.Goal == "" {
+		return "goal is required"
 	}
-	canvas.Policies = append(canvas.Policies, Policy{
-		ID:          newLocalID(),
-		Text:        req.Text,
-		DerivedFrom: req.DerivedFrom,
-	})
+	premises := req.Premises
+	if premises == nil {
+		premises = []string{}
+	}
+	tasks := req.Tasks
+	if tasks == nil {
+		tasks = []string{}
+	}
+	m.Harvest = &Harvest{Goal: req.Goal, Premises: premises, Tasks: tasks}
 	return ""
 }

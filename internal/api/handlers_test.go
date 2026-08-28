@@ -42,13 +42,13 @@ func createCanvas(t *testing.T, h http.Handler) string {
 	return body.ID
 }
 
-func getCanvas(t *testing.T, h http.Handler, id string) map[string]any {
+func getMap(t *testing.T, h http.Handler, id string) map[string]any {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/api/canvas/"+id, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("get canvas: want 200, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("get map: want 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -57,13 +57,13 @@ func getCanvas(t *testing.T, h http.Handler, id string) map[string]any {
 	return body
 }
 
-func getCanvasNoDeliver(t *testing.T, h http.Handler, id string) map[string]any {
+func getMapNoDeliver(t *testing.T, h http.Handler, id string) map[string]any {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/api/canvas/"+id+"?deliver=0", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("get canvas (deliver=0): want 200, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("get map (deliver=0): want 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -84,243 +84,217 @@ func postJSON(t *testing.T, h http.Handler, path string, payload map[string]any)
 	return rec
 }
 
+// placeRoot creates the map's root node via the human endpoint (mirroring
+// the mock: the human always places the first node) and returns its id.
+// Fetches its own fresh readToken first — the guard applies to every write,
+// including this one.
+func placeRoot(t *testing.T, h http.Handler, id, text string) (nodeID, newToken string) {
+	t.Helper()
+	token := getMapNoDeliver(t, h, id)["readToken"].(string)
+	rec := postJSON(t, h, "/api/canvas/"+id+"/nodes/human", map[string]any{
+		"readToken": token,
+		"text":      text,
+		"x":         100,
+		"y":         100,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("place root: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		ReadToken string `json:"readToken"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode place root response: %v", err)
+	}
+	m := getMapNoDeliver(t, h, id)
+	nodes := m["nodes"].([]any)
+	root := nodes[len(nodes)-1].(map[string]any)
+	return root["id"].(string), resp.ReadToken
+}
+
 // TestWriteWithoutReadTokenIsRejected is the standing falsification probe
-// for the read_canvas guard contract: writing without (or with a stale)
-// readToken must fail with 409 and steer the caller back to read_canvas.
+// for the read_map guard contract: writing without (or with a stale)
+// readToken must fail with 409 and steer the caller back to read_map.
 func TestWriteWithoutReadTokenIsRejected(t *testing.T) {
 	h := newTestServer(t)
 	id := createCanvas(t, h)
+	rootID, token := placeRoot(t, h, id, "住宅購入")
 
-	rec := postJSON(t, h, "/api/canvas/"+id+"/goal", map[string]any{
-		"title": "Ship the MVP",
+	rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"parent": rootID,
+		"nodes":  []map[string]any{{"text": "予算"}},
 	})
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("missing token: want 409, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "read_canvas") {
-		t.Fatalf("error body must steer the caller to read_canvas, got: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "read_map") {
+		t.Fatalf("error body must steer the caller back to read_map, got: %s", rec.Body.String())
 	}
 
-	canvas := getCanvas(t, h, id)
-	staleToken := canvas["readToken"].(string) + "-stale"
-	rec = postJSON(t, h, "/api/canvas/"+id+"/goal", map[string]any{
-		"readToken": staleToken,
-		"title":     "Ship the MVP",
+	rec = postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token + "-stale",
+		"parent":    rootID,
+		"nodes":     []map[string]any{{"text": "予算"}},
 	})
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("stale token: want 409, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "read_canvas") {
-		t.Fatalf("error body must steer the caller to read_canvas, got: %s", rec.Body.String())
-	}
 }
 
 // TestHumanActionsNotRedelivered mirrors the store-level probe at the HTTP
-// boundary: two consecutive GETs must not return the same human actions.
+// boundary: two consecutive consuming GETs must not return the same human
+// actions.
 func TestHumanActionsNotRedelivered(t *testing.T) {
 	h := newTestServer(t)
 	id := createCanvas(t, h)
 
 	rec := postJSON(t, h, "/api/canvas/"+id+"/human-actions", map[string]any{
-		"type": "task.delete",
-		"data": map[string]any{"taskId": "t1"},
+		"type": "add",
+		"data": map[string]any{"nodeId": "n1"},
 	})
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("record human action: want 202, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	first := getCanvas(t, h, id)
+	first := getMap(t, h, id)
 	actions, _ := first["humanActions"].([]any)
 	if len(actions) != 1 {
 		t.Fatalf("1st GET: want 1 human action, got %d (%v)", len(actions), first["humanActions"])
 	}
 
-	second := getCanvas(t, h, id)
+	second := getMap(t, h, id)
 	actions2, _ := second["humanActions"].([]any)
 	if len(actions2) != 0 {
 		t.Fatalf("2nd consecutive GET: want 0 human actions (no re-delivery), got %d", len(actions2))
 	}
 }
 
-// TestNonConsumingReadDoesNotDeliverHumanActions is the standing
-// falsification probe for the must-fix contract change: the page's
-// non-consuming read (?deliver=0) must never surface or consume pending
-// humanActions, no matter how many times it's called, and a later consuming
-// read (read_canvas, no query) must still receive every one of them.
+// TestNonConsumingReadDoesNotDeliverHumanActions: ?deliver=0 must never
+// surface or consume pending humanActions, and a later consuming read must
+// still receive them.
 func TestNonConsumingReadDoesNotDeliverHumanActions(t *testing.T) {
 	h := newTestServer(t)
 	id := createCanvas(t, h)
 
 	rec := postJSON(t, h, "/api/canvas/"+id+"/human-actions", map[string]any{
-		"type": "task.delete",
-		"data": map[string]any{"taskId": "t1"},
+		"type": "add",
+		"data": map[string]any{"nodeId": "n1"},
 	})
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("record human action: want 202, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	for i := 0; i < 2; i++ {
-		noDeliver := getCanvasNoDeliver(t, h, id)
+		noDeliver := getMapNoDeliver(t, h, id)
 		actions, _ := noDeliver["humanActions"].([]any)
 		if len(actions) != 0 {
-			t.Fatalf("deliver=0 read #%d: want 0 human actions (non-consuming, none shown), got %d", i+1, len(actions))
+			t.Fatalf("deliver=0 read #%d: want 0 human actions (non-consuming), got %d", i+1, len(actions))
 		}
 	}
 
-	consuming := getCanvas(t, h, id)
+	consuming := getMap(t, h, id)
 	actions, _ := consuming["humanActions"].([]any)
 	if len(actions) != 1 {
 		t.Fatalf("consuming read after 2x deliver=0: want the 1 pending action still undelivered, got %d", len(actions))
 	}
-
-	// Once delivered via the consuming read, it must not reappear on a
-	// further consuming read either.
-	consuming2 := getCanvas(t, h, id)
-	actions2, _ := consuming2["humanActions"].([]any)
-	if len(actions2) != 0 {
-		t.Fatalf("2nd consuming read: want 0 (already delivered), got %d", len(actions2))
-	}
 }
 
-// TestPlanTasksPreservesExistingOrder is the standing falsification probe
-// for the direction's task.order contract: plan_tasks must not reorder
-// existing tasks even when the agent submits them in a different sequence;
-// only genuinely new tasks may be appended.
-func TestPlanTasksPreservesExistingOrder(t *testing.T) {
+// TestAddNodesRejectsMoreThanThree is the standing falsification probe for
+// the v3 structural cap: add_nodes must reject a call with 4+ nodes with
+// 400, and must not partially apply it.
+func TestAddNodesRejectsMoreThanThree(t *testing.T) {
 	h := newTestServer(t)
 	id := createCanvas(t, h)
+	rootID, token := placeRoot(t, h, id, "住宅購入")
 
-	canvas := getCanvas(t, h, id)
-	token := canvas["readToken"].(string)
-
-	rec := postJSON(t, h, "/api/canvas/"+id+"/tasks/plan", map[string]any{
+	rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
 		"readToken": token,
-		"tasks": []map[string]any{
-			{"text": "Write outline"},
-			{"text": "Draft section 1"},
+		"parent":    rootID,
+		"nodes": []map[string]any{
+			{"text": "予算"}, {"text": "ローン"}, {"text": "エリア"}, {"text": "内見"},
+		},
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("4 nodes: want 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	m := getMapNoDeliver(t, h, id)
+	nodes := m["nodes"].([]any)
+	if len(nodes) != 1 {
+		t.Fatalf("rejected add_nodes must not partially apply: want 1 node (just root), got %d", len(nodes))
+	}
+
+	// Exactly 3 must succeed.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    rootID,
+		"nodes": []map[string]any{
+			{"text": "予算"}, {"text": "ローン"}, {"text": "エリア"},
 		},
 	})
 	if rec.Code != http.StatusOK {
-		t.Fatalf("initial plan_tasks: want 200, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("3 nodes: want 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-
-	canvas = getCanvas(t, h, id)
-	tasks := canvas["tasks"].([]any)
-	if len(tasks) != 2 {
-		t.Fatalf("want 2 tasks after initial plan, got %d", len(tasks))
-	}
-	t0 := tasks[0].(map[string]any)
-	t1 := tasks[1].(map[string]any)
-	id0, order0 := t0["id"].(string), t0["order"].(float64)
-	id1, order1 := t1["id"].(string), t1["order"].(float64)
-	if order0 != 0 || order1 != 1 {
-		t.Fatalf("want initial orders 0,1, got %v,%v", order0, order1)
-	}
-
-	// Agent tries to replan: resubmit both existing tasks in reversed
-	// sequence, plus one genuinely new task.
-	token = canvas["readToken"].(string)
-	rec = postJSON(t, h, "/api/canvas/"+id+"/tasks/plan", map[string]any{
-		"readToken": token,
-		"tasks": []map[string]any{
-			{"id": id1, "text": "Draft section 1 (revised)"},
-			{"id": id0, "text": "Write outline (revised)"},
-			{"text": "Write conclusion"},
-		},
-	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("replan: want 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	canvas = getCanvas(t, h, id)
-	tasks = canvas["tasks"].([]any)
-	if len(tasks) != 3 {
-		t.Fatalf("want 3 tasks after replan, got %d", len(tasks))
-	}
-	byID := map[string]map[string]any{}
-	for _, raw := range tasks {
-		tk := raw.(map[string]any)
-		byID[tk["id"].(string)] = tk
-	}
-	if byID[id0]["order"].(float64) != 0 {
-		t.Fatalf("existing task %s must keep order 0, got %v", id0, byID[id0]["order"])
-	}
-	if byID[id1]["order"].(float64) != 1 {
-		t.Fatalf("existing task %s must keep order 1, got %v", id1, byID[id1]["order"])
-	}
-	if byID[id0]["text"] != "Write outline (revised)" {
-		t.Fatalf("existing task text must still update, got %v", byID[id0]["text"])
-	}
-	// The new task must land after the two existing ones, never reordering them.
-	var newOrder float64 = -1
-	for _, tk := range byID {
-		if tk["text"] == "Write conclusion" {
-			newOrder = tk["order"].(float64)
-		}
-	}
-	if newOrder != 2 {
-		t.Fatalf("new task must be appended at order 2, got %v", newOrder)
+	m = getMapNoDeliver(t, h, id)
+	nodes = m["nodes"].([]any)
+	if len(nodes) != 4 {
+		t.Fatalf("want 4 nodes (root + 3 children), got %d", len(nodes))
 	}
 }
 
-// TestTasksUpdateHasNoOrderOrDeleteSurface is the standing falsification
-// probe for the should-fix follow-up: the agent-facing /tasks/update
-// endpoint must not move or remove a task even if a caller sends order/
-// delete fields — those live only on /tasks/human, which has no WebMCP
-// tool.
-func TestTasksUpdateHasNoOrderOrDeleteSurface(t *testing.T) {
+// TestUpdateNodeCannotMoveOrDelete mirrors the v1 "agent capability lives
+// at the decode surface, not the schema" pattern: /node (update_node) must
+// not accept fields that would move or delete a node, even if a caller
+// sends them — those are exclusive to /node/human.
+func TestUpdateNodeCannotMoveOrDelete(t *testing.T) {
 	h := newTestServer(t)
 	id := createCanvas(t, h)
+	rootID, token := placeRoot(t, h, id, "住宅購入")
 
-	canvas := getCanvas(t, h, id)
-	token := canvas["readToken"].(string)
-	rec := postJSON(t, h, "/api/canvas/"+id+"/tasks/plan", map[string]any{
+	rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
 		"readToken": token,
-		"tasks":     []map[string]any{{"text": "Write outline"}, {"text": "Draft section 1"}},
+		"parent":    rootID,
+		"nodes":     []map[string]any{{"text": "予算の全体像をつかむ"}},
 	})
 	if rec.Code != http.StatusOK {
-		t.Fatalf("plan_tasks: want 200, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("add_nodes: want 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	canvas = getCanvas(t, h, id)
-	tasks := canvas["tasks"].([]any)
-	t0 := tasks[0].(map[string]any)
-	taskID := t0["id"].(string)
+	m := getMapNoDeliver(t, h, id)
+	nodes := m["nodes"].([]any)
+	child := nodes[len(nodes)-1].(map[string]any)
+	childID := child["id"].(string)
+	origX := child["x"].(float64)
+	token = m["readToken"].(string)
 
-	// Sending order/delete through /tasks/update must have no effect: the
-	// endpoint doesn't decode those fields at all.
-	token = canvas["readToken"].(string)
-	rec = postJSON(t, h, "/api/canvas/"+id+"/tasks/update", map[string]any{
+	// update_node has no x/y/delete fields at all — sending them must be a
+	// no-op for those fields (JSON decode simply drops unknown data since
+	// updateNodeRequest never declares them).
+	rec = postJSON(t, h, "/api/canvas/"+id+"/node", map[string]any{
 		"readToken": token,
-		"updates":   []map[string]any{{"id": taskID, "order": 99, "delete": true}},
+		"id":        childID,
+		"x":         9999,
+		"delete":    true,
 	})
 	if rec.Code != http.StatusOK {
-		t.Fatalf("tasks/update: want 200, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("update_node: want 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	canvas = getCanvas(t, h, id)
-	tasks = canvas["tasks"].([]any)
-	if len(tasks) != 2 {
-		t.Fatalf("tasks/update with order/delete fields must not delete or reorder: want 2 tasks, got %d", len(tasks))
+	m = getMapNoDeliver(t, h, id)
+	nodes = m["nodes"].([]any)
+	if len(nodes) != 2 {
+		t.Fatalf("node must not be deleted via update_node: want 2 nodes, got %d", len(nodes))
 	}
-	for _, raw := range tasks {
-		tk := raw.(map[string]any)
-		if tk["id"] == taskID && tk["order"].(float64) != 0 {
-			t.Fatalf("order must be unchanged by tasks/update, got %v", tk["order"])
+	var found map[string]any
+	for _, raw := range nodes {
+		n := raw.(map[string]any)
+		if n["id"] == childID {
+			found = n
 		}
 	}
-
-	// The same delete now works via the dedicated human-only endpoint.
-	token = canvas["readToken"].(string)
-	rec = postJSON(t, h, "/api/canvas/"+id+"/tasks/human", map[string]any{
-		"readToken": token,
-		"edits":     []map[string]any{{"id": taskID, "delete": true}},
-	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("tasks/human delete: want 200, got %d: %s", rec.Code, rec.Body.String())
+	if found == nil {
+		t.Fatal("child node disappeared")
 	}
-	canvas = getCanvas(t, h, id)
-	tasks = canvas["tasks"].([]any)
-	if len(tasks) != 1 {
-		t.Fatalf("tasks/human delete: want 1 task remaining, got %d", len(tasks))
+	if found["x"].(float64) != origX {
+		t.Fatalf("x must be unchanged by update_node: want %v, got %v", origX, found["x"])
 	}
 }

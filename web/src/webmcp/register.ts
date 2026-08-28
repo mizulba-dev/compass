@@ -1,15 +1,15 @@
-import type { Canvas } from '../types';
-import { StaleTokenError, getCanvasForAgent } from '../api';
+import type { FogMap } from '../types';
+import { StaleTokenError, getMapForAgent } from '../api';
 import { resolveCanvasId } from '../canvasBootstrap';
 import { descriptions } from './descriptions';
 import type { ModelContext, WebMCPToolResult } from './types';
 
 const STALE_TOKEN_TEXT =
-  'Write rejected: your state token is missing or stale. Call read_canvas again, then retry.';
+  'Write rejected: your state token is missing or stale. Call read_map again, then retry.';
 
 // The current readToken, tracked at module scope so agent tool calls never
 // need to carry it as an argument. Every tool call ends by re-reading the
-// canvas, which both refreshes this token and delivers any pending
+// map, which both refreshes this token and delivers any pending
 // humanActions. Module scope (rather than a closure created per
 // registerWebMCPTools() call) matches registration itself: both happen
 // exactly once per page load, before the React app exists.
@@ -17,12 +17,12 @@ let readToken = '';
 
 // The React app connects this after it mounts (see App.tsx), so a tool call
 // that completes before mount — or after unmount — just has no UI to push
-// into. It still succeeds; the canvas state itself is unaffected, and the
+// into. It still succeeds; the map state itself is unaffected, and the
 // next SSE tick or page read reconciles the view.
-let updateListener: ((canvas: Canvas) => void) | null = null;
+let updateListener: ((map: FogMap) => void) | null = null;
 
-/** Connects (or clears, with null) the listener that tool calls push fresh canvas snapshots into. */
-export function setCanvasUpdateListener(listener: ((canvas: Canvas) => void) | null): void {
+/** Connects (or clears, with null) the listener that tool calls push fresh map snapshots into. */
+export function setMapUpdateListener(listener: ((map: FogMap) => void) | null): void {
   updateListener = listener;
 }
 
@@ -47,8 +47,8 @@ export function setWebMCPStatusListener(listener: ((status: WebMCPStatus) => voi
   listener?.(status);
 }
 
-function ok(canvas: Canvas): WebMCPToolResult {
-  return { content: [{ type: 'text', text: JSON.stringify(canvas) }] };
+function ok(map: FogMap): WebMCPToolResult {
+  return { content: [{ type: 'text', text: JSON.stringify(map) }] };
 }
 
 function err(message: string): WebMCPToolResult {
@@ -64,12 +64,12 @@ async function writeJSON(path: string, body: Record<string, unknown>): Promise<R
   });
 }
 
-async function refresh(): Promise<Canvas> {
+async function refresh(): Promise<FogMap> {
   const id = await resolveCanvasId();
-  const canvas = await getCanvasForAgent(id);
-  readToken = canvas.readToken;
-  updateListener?.(canvas);
-  return canvas;
+  const map = await getMapForAgent(id);
+  readToken = map.readToken;
+  updateListener?.(map);
+  return map;
 }
 
 async function write(pathSuffix: string, body: Record<string, unknown>): Promise<WebMCPToolResult> {
@@ -85,24 +85,25 @@ async function write(pathSuffix: string, body: Record<string, unknown>): Promise
   return ok(await refresh());
 }
 
-const TOOL_COUNT = 7;
+const TOOL_COUNT = 4;
 const POLL_INTERVAL_MS = 250;
 const POLL_TIMEOUT_MS = 20000;
 
 let registered = false;
 
 /**
- * Registers Compass's 7 WebMCP tools on navigator.modelContext, tolerating
+ * Registers Compass's 4 WebMCP tools (read_map / add_nodes / update_node /
+ * harvest) on navigator.modelContext and document.modelContext, tolerating
  * a host (e.g. ChatGPT's in-app browser) that injects modelContext onto the
- * page asynchronously, after this module already ran. If it's present at
- * call time, tools register immediately and synchronously, with no network
- * or React wait. If it's absent, this polls every 250ms for up to 20s and
- * also retries on the DOMContentLoaded and load events (belt-and-suspenders
- * for a host whose injection happens to line up with one of those instead
- * of a fixed delay), registering exactly once — an idempotency guard makes
- * every later trigger, and a poll tick racing an event, a no-op once
- * registration has actually happened. After 20s with no modelContext, gives
- * up and reports 'unsupported'.
+ * page asynchronously, after this module already ran. If present at call
+ * time, tools register immediately and synchronously, with no network or
+ * React wait. If absent, this polls every 250ms for up to 20s and also
+ * retries on the DOMContentLoaded and load events (belt-and-suspenders for
+ * a host whose injection happens to line up with one of those instead of a
+ * fixed delay), registering exactly once — an idempotency guard makes every
+ * later trigger, and a poll tick racing an event, a no-op once registration
+ * has actually happened. After 20s with no modelContext, gives up and
+ * reports 'unsupported'.
  *
  * The canvas id itself is resolved lazily, inside each tool's execute(),
  * via resolveCanvasId() — never at registration time.
@@ -146,7 +147,7 @@ function findModelContextHosts(): ModelContext[] {
   return hosts;
 }
 
-/** Registers all 7 tools on every distinct WebMCP host present, if this hasn't already run. Returns whether tools are registered (either just now, or already). */
+/** Registers all 4 tools on every distinct WebMCP host present, if this hasn't already run. Returns whether tools are registered (either just now, or already). */
 function tryRegisterOnce(): boolean {
   if (registered) return true;
   const hosts = findModelContextHosts();
@@ -163,119 +164,75 @@ function tryRegisterOnce(): boolean {
 
 function registerToolsOn(modelContext: ModelContext): void {
   modelContext.registerTool({
-    name: 'read_canvas',
-    description: descriptions.read_canvas,
-    inputSchema: { type: 'object', properties: {} },
+    name: 'read_map',
+    description: descriptions.read_map,
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     async execute() {
       try {
         return ok(await refresh());
       } catch (e) {
-        return err(e instanceof Error ? e.message : 'read_canvas failed');
+        return err(e instanceof Error ? e.message : 'read_map failed');
       }
     },
   });
 
   modelContext.registerTool({
-    name: 'set_goal',
-    description: descriptions.set_goal,
+    name: 'add_nodes',
+    description: descriptions.add_nodes,
     inputSchema: {
       type: 'object',
       properties: {
-        title: { type: 'string' },
-        deadline: { type: 'string' },
-        why: { type: 'string' },
-      },
-      required: ['title'],
-    },
-    execute: (args) => write('/goal', args),
-  });
-
-  modelContext.registerTool({
-    name: 'set_current',
-    description: descriptions.set_current,
-    inputSchema: {
-      type: 'object',
-      properties: { summary: { type: 'string' } },
-      required: ['summary'],
-    },
-    execute: (args) => write('/current', args),
-  });
-
-  modelContext.registerTool({
-    name: 'upsert_gaps',
-    description: descriptions.upsert_gaps,
-    inputSchema: {
-      type: 'object',
-      properties: {
-        add: { type: 'array', items: { type: 'string' } },
-        resolve: { type: 'array', items: { type: 'string' } },
-      },
-    },
-    execute: (args) => write('/gaps', args),
-  });
-
-  modelContext.registerTool({
-    name: 'plan_tasks',
-    description: descriptions.plan_tasks,
-    inputSchema: {
-      type: 'object',
-      properties: {
-        tasks: {
+        parent: { type: 'string', description: 'id of an existing node to branch off of' },
+        nodes: {
           type: 'array',
+          maxItems: 3,
           items: {
             type: 'object',
             properties: {
-              id: { type: 'string' },
               text: { type: 'string' },
-              day: { type: 'string' },
+              kind: { type: 'string', enum: ['normal', 'question'] },
             },
             required: ['text'],
-          },
-        },
-      },
-      required: ['tasks'],
-    },
-    execute: (args) => write('/tasks/plan', args),
-  });
-
-  modelContext.registerTool({
-    name: 'update_tasks',
-    description: descriptions.update_tasks,
-    inputSchema: {
-      type: 'object',
-      properties: {
-        updates: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              id: { type: 'string' },
-              text: { type: 'string' },
-              done: { type: 'boolean' },
-            },
-            required: ['id'],
             additionalProperties: false,
           },
         },
       },
-      required: ['updates'],
+      required: ['parent', 'nodes'],
       additionalProperties: false,
     },
-    execute: (args) => write('/tasks/update', args),
+    execute: (args) => write('/nodes', args),
   });
 
   modelContext.registerTool({
-    name: 'add_policy',
-    description: descriptions.add_policy,
+    name: 'update_node',
+    description: descriptions.update_node,
     inputSchema: {
       type: 'object',
       properties: {
+        id: { type: 'string' },
         text: { type: 'string' },
-        derivedFrom: { type: 'string' },
+        unfog: { type: 'boolean', description: 'set true to clear this node\'s fog; there is no way to set fog on through this tool' },
       },
-      required: ['text', 'derivedFrom'],
+      required: ['id'],
+      additionalProperties: false,
     },
-    execute: (args) => write('/policies', args),
+    execute: (args) => write('/node', args),
+  });
+
+  modelContext.registerTool({
+    name: 'harvest',
+    description: descriptions.harvest,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string' },
+        premises: { type: 'array', items: { type: 'string' } },
+        tasks: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['goal'],
+      additionalProperties: false,
+    },
+    execute: (args) => write('/harvest', args),
   });
 }
 

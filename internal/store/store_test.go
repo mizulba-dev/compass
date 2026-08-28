@@ -132,3 +132,64 @@ func TestHumanActionsDeliveredOnce(t *testing.T) {
 		t.Fatalf("want exactly one new action with seq 3, got %+v", third.ActionsPending)
 	}
 }
+
+// TestMoveActionsCollapseToLatestPerNode is a standing falsification probe
+// for the v3 humanActions contract: a node dragged across the canvas fires
+// many "move" events, but only the latest one per node should reach the
+// agent — earlier positions are stale the moment a newer one lands.
+func TestMoveActionsCollapseToLatestPerNode(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	id, err := s.Create(ctx, json.RawMessage(`{"nodes":[]}`))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Drag node A three times, drag node B once in between.
+	if err := s.RecordHumanAction(ctx, id, "move", json.RawMessage(`{"nodeId":"a","x":10,"y":10}`)); err != nil {
+		t.Fatalf("RecordHumanAction: %v", err)
+	}
+	if err := s.RecordHumanAction(ctx, id, "move", json.RawMessage(`{"nodeId":"b","x":50,"y":50}`)); err != nil {
+		t.Fatalf("RecordHumanAction: %v", err)
+	}
+	if err := s.RecordHumanAction(ctx, id, "move", json.RawMessage(`{"nodeId":"a","x":20,"y":20}`)); err != nil {
+		t.Fatalf("RecordHumanAction: %v", err)
+	}
+	if err := s.RecordHumanAction(ctx, id, "move", json.RawMessage(`{"nodeId":"a","x":30,"y":30}`)); err != nil {
+		t.Fatalf("RecordHumanAction: %v", err)
+	}
+
+	row, err := s.ReadAndDeliver(ctx, id)
+	if err != nil {
+		t.Fatalf("ReadAndDeliver: %v", err)
+	}
+	if len(row.ActionsPending) != 2 {
+		t.Fatalf("want 2 pending actions (latest move per node), got %d: %+v", len(row.ActionsPending), row.ActionsPending)
+	}
+	var gotA, gotB bool
+	for _, a := range row.ActionsPending {
+		var payload struct {
+			NodeID string  `json:"nodeId"`
+			X      float64 `json:"x"`
+		}
+		if err := json.Unmarshal(a.Data, &payload); err != nil {
+			t.Fatalf("decode action data: %v", err)
+		}
+		switch payload.NodeID {
+		case "a":
+			gotA = true
+			if payload.X != 30 {
+				t.Fatalf("node a: want latest x=30, got %v", payload.X)
+			}
+		case "b":
+			gotB = true
+			if payload.X != 50 {
+				t.Fatalf("node b: want x=50, got %v", payload.X)
+			}
+		}
+	}
+	if !gotA || !gotB {
+		t.Fatalf("want one action for each of node a and node b, got %+v", row.ActionsPending)
+	}
+}

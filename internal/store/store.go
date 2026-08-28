@@ -244,6 +244,23 @@ func (s *Store) RecordHumanAction(ctx context.Context, id, actionType string, da
 		}
 	}
 
+	// "move" actions fire continuously while a node is dragged. Collapsing
+	// them to the latest one per node keeps the agent's next tool result
+	// from carrying a queue of stale intermediate positions — only where
+	// the node ended up matters.
+	if actionType == "move" {
+		if nodeID := actionNodeID(data); nodeID != "" {
+			kept := pending[:0]
+			for _, a := range pending {
+				if a.Type == "move" && actionNodeID(a.Data) == nodeID {
+					continue
+				}
+				kept = append(kept, a)
+			}
+			pending = kept
+		}
+	}
+
 	maxSeq := deliveredSeq
 	for _, a := range pending {
 		if a.Seq > maxSeq {
@@ -268,4 +285,19 @@ func (s *Store) RecordHumanAction(ctx context.Context, id, actionType string, da
 	}
 
 	return tx.Commit()
+}
+
+// actionNodeID extracts the "nodeId" field a human-action's data payload is
+// expected to carry (add/edit/move/delete/fog/unfog/star all act on one
+// node). Returns "" if the payload doesn't have one — callers that only use
+// this for the move-aggregation optimization treat that as "don't
+// aggregate" rather than an error.
+func actionNodeID(data json.RawMessage) string {
+	var probe struct {
+		NodeID string `json:"nodeId"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return ""
+	}
+	return probe.NodeID
 }

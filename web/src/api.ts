@@ -1,4 +1,4 @@
-import type { Canvas } from './types';
+import type { FogMap } from './types';
 
 /** Thrown when a write is rejected for a missing or stale readToken. */
 export class StaleTokenError extends Error {}
@@ -21,22 +21,21 @@ export async function createCanvas(): Promise<{ id: string }> {
 /**
  * Non-consuming read, for the page's own live-state hydration (initial
  * load, poll fallback, post-write refresh). Never returns or delivers
- * pending humanActions — only read_canvas (getCanvasForAgent) may consume
- * those, so the page can't steal an event meant for the agent's next tool
- * call.
+ * pending humanActions — only read_map (getMapForAgent) may consume those,
+ * so the page can't steal an event meant for the agent's next tool call.
  */
-export async function getCanvas(id: string): Promise<Canvas> {
+export async function getMap(id: string): Promise<FogMap> {
   const res = await fetch(`/api/canvas/${id}?deliver=0`, { credentials: 'same-origin' });
-  return (await parseOrThrow(res)) as Canvas;
+  return (await parseOrThrow(res)) as FogMap;
 }
 
 /**
- * Consuming read: the WebMCP read_canvas tool only. Delivers and clears any
+ * Consuming read: the WebMCP read_map tool only. Delivers and clears any
  * pending humanActions.
  */
-export async function getCanvasForAgent(id: string): Promise<Canvas> {
+export async function getMapForAgent(id: string): Promise<FogMap> {
   const res = await fetch(`/api/canvas/${id}`, { credentials: 'same-origin' });
-  return (await parseOrThrow(res)) as Canvas;
+  return (await parseOrThrow(res)) as FogMap;
 }
 
 async function postWrite(path: string, body: Record<string, unknown>): Promise<{ readToken: string }> {
@@ -49,28 +48,33 @@ async function postWrite(path: string, body: Record<string, unknown>): Promise<{
   return (await parseOrThrow(res)) as { readToken: string };
 }
 
-/** Toggling a task's done state, made directly by the human on the page. */
-export async function updateTasks(
+/**
+ * Places a single freely-positioned node directly on the human's canvas
+ * (double-click, or the + toolbar button on a selected node). No WebMCP
+ * tool calls this — add_nodes (agent) is capped at 3 per call and always
+ * needs an existing parent; this one doesn't.
+ */
+export async function addNodeHuman(
   id: string,
   readToken: string,
-  updates: Array<{ id: string; done?: boolean; text?: string }>,
+  input: { text: string; x: number; y: number; parent?: string },
 ): Promise<{ readToken: string }> {
-  return postWrite(`/api/canvas/${id}/tasks/update`, { readToken, updates });
+  return postWrite(`/api/canvas/${id}/nodes/human`, { readToken, ...input });
 }
 
 /**
- * Reordering or deleting a task, made directly by the human on the page.
- * There is no WebMCP tool for this — the agent can never call it.
+ * Every node edit reserved for the human: move, delete (with its subtree),
+ * toggle fog either way, star. No WebMCP tool calls this endpoint.
  */
-export async function editTasksHuman(
+export async function editNodeHuman(
   id: string,
   readToken: string,
-  edits: Array<{ id: string; order?: number; delete?: boolean }>,
+  edit: { id: string; text?: string; x?: number; y?: number; fog?: boolean; star?: boolean; delete?: boolean },
 ): Promise<{ readToken: string }> {
-  return postWrite(`/api/canvas/${id}/tasks/human`, { readToken, edits });
+  return postWrite(`/api/canvas/${id}/node/human`, { readToken, ...edit });
 }
 
-export type HumanActionType = 'task.toggle' | 'task.reorder' | 'task.delete';
+export type HumanActionType = 'add' | 'edit' | 'move' | 'delete' | 'fog' | 'unfog' | 'star';
 
 /** Records a human edit for the agent to notice on its next tool call. */
 export async function recordHumanAction(id: string, type: HumanActionType, data: unknown): Promise<void> {

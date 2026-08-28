@@ -14,62 +14,41 @@ import (
 	"github.com/mizulba-dev/compass/internal/store"
 )
 
-// Canvas mirrors the data model from the product spec. It is stored and
-// returned as opaque JSON by internal/store; this struct exists only so the
-// API layer can validate and default fields before persisting.
-type Canvas struct {
-	Goal     *Goal     `json:"goal"`
-	Current  *Current  `json:"current"`
-	Gaps     []Gap     `json:"gaps"`
-	Tasks    []Task    `json:"tasks"`
-	Policies []Policy  `json:"policies"`
-	Sessions []Session `json:"sessions"`
+// MapData mirrors the v3 "fog map" data model: a freeform mind-map canvas
+// (nodes with position, parentage, fog/star state) plus an optional folded
+// harvest. It is stored and returned as opaque JSON by internal/store; this
+// struct exists only so the API layer can validate and mutate fields before
+// persisting.
+type MapData struct {
+	Title   string   `json:"title"`
+	Nodes   []Node   `json:"nodes"`
+	Harvest *Harvest `json:"harvest"`
 }
 
-type Goal struct {
-	Title    string `json:"title"`
-	Deadline string `json:"deadline,omitempty"`
-	Why      string `json:"why,omitempty"`
+type Node struct {
+	ID        string  `json:"id"`
+	Text      string  `json:"text"`
+	X         float64 `json:"x"`
+	Y         float64 `json:"y"`
+	Parent    *string `json:"parent"`
+	Root      bool    `json:"root,omitempty"`
+	Dir       int     `json:"dir,omitempty"` // which side of its parent this subtree grows on: 1 (right) or -1 (left)
+	Color     string  `json:"color,omitempty"`
+	Kind      string  `json:"kind"` // "normal" | "question"
+	Fog       bool    `json:"fog"`
+	Star      bool    `json:"star"`
+	Origin    string  `json:"origin"` // "human" | "agent"
+	CreatedAt string  `json:"createdAt"`
 }
 
-type Current struct {
-	Summary   string `json:"summary"`
-	UpdatedAt string `json:"updatedAt"`
+type Harvest struct {
+	Goal     string   `json:"goal"`
+	Premises []string `json:"premises"`
+	Tasks    []string `json:"tasks"`
 }
 
-type Gap struct {
-	ID       string `json:"id"`
-	Text     string `json:"text"`
-	Resolved bool   `json:"resolved"`
-}
-
-type Task struct {
-	ID     string  `json:"id"`
-	Text   string  `json:"text"`
-	Day    *string `json:"day"`
-	Order  int     `json:"order"`
-	Done   bool    `json:"done"`
-	Origin string  `json:"origin"` // "agent" | "human"
-}
-
-type Policy struct {
-	ID          string `json:"id"`
-	Text        string `json:"text"`
-	DerivedFrom string `json:"derivedFrom"`
-}
-
-type Session struct {
-	At      string `json:"at"`
-	Summary string `json:"summary"`
-}
-
-func emptyCanvas() Canvas {
-	return Canvas{
-		Gaps:     []Gap{},
-		Tasks:    []Task{},
-		Policies: []Policy{},
-		Sessions: []Session{},
-	}
+func emptyMap() MapData {
+	return MapData{Nodes: []Node{}}
 }
 
 // API holds the dependencies shared by all handlers.
@@ -92,13 +71,11 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/canvas/{id}", a.handleGet)
 	mux.HandleFunc("GET /api/canvas/{id}/events", a.handleEvents)
 	mux.HandleFunc("POST /api/canvas/{id}/human-actions", a.handleHumanAction)
-	mux.HandleFunc("POST /api/canvas/{id}/goal", a.writeHandler(applyGoal))
-	mux.HandleFunc("POST /api/canvas/{id}/current", a.writeHandler(applyCurrent))
-	mux.HandleFunc("POST /api/canvas/{id}/gaps", a.writeHandler(applyGaps))
-	mux.HandleFunc("POST /api/canvas/{id}/tasks/plan", a.writeHandler(applyPlanTasks))
-	mux.HandleFunc("POST /api/canvas/{id}/tasks/update", a.writeHandler(applyUpdateTasks))
-	mux.HandleFunc("POST /api/canvas/{id}/tasks/human", a.writeHandler(applyHumanTaskEdit))
-	mux.HandleFunc("POST /api/canvas/{id}/policies", a.writeHandler(applyPolicy))
+	mux.HandleFunc("POST /api/canvas/{id}/nodes", a.writeHandler(applyAddNodes))
+	mux.HandleFunc("POST /api/canvas/{id}/nodes/human", a.writeHandler(applyAddNodeHuman))
+	mux.HandleFunc("POST /api/canvas/{id}/node", a.writeHandler(applyUpdateNode))
+	mux.HandleFunc("POST /api/canvas/{id}/node/human", a.writeHandler(applyNodeHuman))
+	mux.HandleFunc("POST /api/canvas/{id}/harvest", a.writeHandler(applyHarvest))
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -111,13 +88,12 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
-const staleTokenMessage = "missing or stale readToken: call read_canvas first, then retry with the returned readToken"
+const staleTokenMessage = "missing or stale readToken: call read_map first, then retry with the returned readToken"
 
 func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
-	canvas := emptyCanvas()
-	data, err := json.Marshal(canvas)
+	data, err := json.Marshal(emptyMap())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "encode initial canvas")
+		writeError(w, http.StatusInternalServerError, "encode initial map")
 		return
 	}
 	id, err := a.store.Create(r.Context(), data)
@@ -251,9 +227,9 @@ func (a *API) handleHumanAction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
 }
 
-// applyFn mutates canvas in place from the decoded request body. It returns
-// a user-facing error message on invalid input, or "" on success.
-type applyFn func(canvas *Canvas, body json.RawMessage) string
+// applyFn mutates the map in place from the decoded request body. It
+// returns a user-facing error message on invalid input, or "" on success.
+type applyFn func(m *MapData, body json.RawMessage) string
 
 // tokenEnvelope extracts the readToken every write request body carries
 // alongside its own fields.
@@ -284,21 +260,21 @@ func (a *API) writeHandler(apply applyFn) http.HandlerFunc {
 			return
 		}
 
-		var canvas Canvas
-		if err := json.Unmarshal(row.Data, &canvas); err != nil {
-			log.Printf("decode canvas: %v", err)
+		var m MapData
+		if err := json.Unmarshal(row.Data, &m); err != nil {
+			log.Printf("decode map: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 
-		if msg := apply(&canvas, body); msg != "" {
+		if msg := apply(&m, body); msg != "" {
 			writeError(w, http.StatusBadRequest, msg)
 			return
 		}
 
-		newData, err := json.Marshal(canvas)
+		newData, err := json.Marshal(m)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to encode canvas")
+			writeError(w, http.StatusInternalServerError, "failed to encode map")
 			return
 		}
 
