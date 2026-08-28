@@ -86,7 +86,14 @@ body {
   border-radius: 999px; padding: 10px 22px; font-weight: 700; font-size: 1rem;
   border-width: 2px; border-color: var(--accent);
 }
-.node.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Selection/edit/focus rings use the node's own branch color (--node-color,
+   set inline per node from its `color` field) rather than a single fixed
+   accent, so highlighting a node reads as "this branch" rather than a
+   generic selected-anything blue. Root and color-less nodes have no
+   --node-color set, so they fall back to --accent. */
+.node.selected { outline: 2px solid var(--node-color, var(--accent)); outline-offset: 2px; }
+.node.editing { outline: 2px solid var(--node-color, var(--accent)); outline-offset: 2px; }
+.node:focus-visible { outline: 2px solid var(--node-color, var(--accent)); outline-offset: 2px; }
 .node.question { border-style: dashed; }
 .node.fogged { background: var(--fog-bg); border: 1.6px dashed var(--fog); color: var(--ink-soft); }
 .node .spark { font-size: .68rem; margin-right: 4px; opacity: .9; }

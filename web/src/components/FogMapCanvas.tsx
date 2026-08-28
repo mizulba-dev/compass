@@ -390,7 +390,15 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
                 data-testid="map-node"
                 data-node-id={n.id}
                 className={cls}
-                style={{ left: n.x, top: n.y, borderColor: !n.root && n.color && !n.fog ? n.color : undefined }}
+                tabIndex={0}
+                style={
+                  {
+                    left: n.x,
+                    top: n.y,
+                    borderColor: !n.root && n.color && !n.fog ? n.color : undefined,
+                    '--node-color': n.color || undefined,
+                  } as React.CSSProperties
+                }
                 onPointerDown={(e) => handleNodePointerDown(e, n)}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
