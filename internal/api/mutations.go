@@ -87,21 +87,68 @@ func colorFor(m *MapData, parent *Node) string {
 // enough to keep newly added nodes from landing on top of others.
 type rect struct{ x0, y0, x1, y1 float64 }
 
+const (
+	nodeMaxWidth = 260.0
+	// nodeContentWidth is roughly nodeMaxWidth minus the node's own
+	// horizontal padding (.node { padding: 7px 14px }) — the width text
+	// actually has to wrap within, used to decide how many lines a node
+	// needs. Using the full outer width here would under-count lines.
+	nodeContentWidth = 232.0
+)
+
+// isWideRune reports whether r renders at roughly a full em (~15px at this
+// font size) rather than the narrower average that fits Latin text —
+// Hiragana, Katakana, CJK Unified Ideographs (and common extensions),
+// Hangul, and fullwidth forms all do. Without this, a long Japanese/
+// Chinese/Korean node's ink width is under-estimated, it's predicted to
+// wrap into fewer lines than it actually renders, and relayout gives it too
+// little vertical space — two such nodes then overlap.
+func isWideRune(r rune) bool {
+	switch {
+	case r >= 0x3000 && r <= 0x30FF, // CJK punctuation, Hiragana, Katakana
+		r >= 0x3400 && r <= 0x4DBF, // CJK unified ideographs extension A
+		r >= 0x4E00 && r <= 0x9FFF, // CJK unified ideographs
+		r >= 0xAC00 && r <= 0xD7A3, // Hangul syllables
+		r >= 0xF900 && r <= 0xFAFF, // CJK compatibility ideographs
+		r >= 0xFF00 && r <= 0xFFEF: // fullwidth/halfwidth forms
+		return true
+	}
+	return false
+}
+
+func charWidthPx(r rune) float64 {
+	if isWideRune(r) {
+		return 15
+	}
+	return 14
+}
+
+func textInkWidth(text string) float64 {
+	width := 0.0
+	for _, r := range text {
+		width += charWidthPx(r)
+	}
+	return width
+}
+
+func estimateHeight(text string) float64 {
+	raw := textInkWidth(text) + 40
+	lines := 1.0
+	if raw > nodeContentWidth {
+		lines = math.Ceil(raw / nodeContentWidth)
+	}
+	return 40 + (lines-1)*22
+}
+
 func estimateRect(x, y float64, text string) rect {
-	raw := 14*float64(len([]rune(text))) + 40
-	width := raw
-	if width > 260 {
-		width = 260
+	width := textInkWidth(text) + 40
+	if width > nodeMaxWidth {
+		width = nodeMaxWidth
 	}
 	if width < 40 {
 		width = 40
 	}
-	lines := 1.0
-	if raw > 260 {
-		lines = math.Ceil(raw / 260)
-	}
-	height := 40 + (lines-1)*22
-	return rect{x0: x, y0: y, x1: x + width, y1: y + height}
+	return rect{x0: x, y0: y, x1: x + width, y1: y + estimateHeight(text)}
 }
 
 func rectsOverlap(a, b rect) bool {
@@ -143,14 +190,17 @@ func avoidCollisionsExcluding(m *MapData, excludeID string, x, y float64, text s
 	return x, y
 }
 
-// layoutRowHeight and the two layoutDepthStep constants mirror childPos's
-// own literals (64px row spacing, 280px right / 260px left per depth
-// level) — relayout is a full-tree generalization of the same placement
-// rule childPos already applies node-by-node at creation time.
+// layoutDepthStepRight/Left mirror childPos's own literals (280px right /
+// 260px left per depth level) — relayout is a full-tree generalization of
+// the same placement rule childPos already applies node-by-node at
+// creation time. verticalGap is the breathing room relayout leaves between
+// two vertically-stacked leaves, on top of each leaf's own estimated
+// height (see subtreeHeight) — unlike x spacing, this can't be a fixed row
+// height, since wrapped multi-line text needs more room than a one-liner.
 const (
-	layoutRowHeight      = 64.0
 	layoutDepthStepRight = 280.0
 	layoutDepthStepLeft  = 260.0
+	verticalGap          = 16.0
 )
 
 func findRootNode(m *MapData) *Node {
@@ -162,22 +212,27 @@ func findRootNode(m *MapData) *Node {
 	return nil
 }
 
-// subtreeLeafCount counts the leaves under node (a childless node counts as
-// one leaf of itself). relayout uses this to reserve each top branch an
-// exact, contiguous row band sized to its own shape, computed up front
-// rather than left to emerge from call order — so two branches on the same
-// side can never end up with interleaved rows regardless of how many
-// separate add_nodes/remove_node turns grew them.
-func subtreeLeafCount(m *MapData, node *Node) int {
+// subtreeHeight returns the total vertical pixels the leaves under node
+// need, gaps included — the real-height generalization of a leaf count.
+// relayout uses this to reserve each top branch an exact, contiguous pixel
+// band sized to its own (actual, wrapped-text-aware) shape, computed up
+// front rather than left to emerge from call order — so two branches on
+// the same side can never end up with interleaved or overlapping bands
+// regardless of how many separate add_nodes/remove_node turns grew them,
+// or how long any one node's text is.
+func subtreeHeight(m *MapData, node *Node) float64 {
 	kids := childrenOf(m, node.ID)
 	if len(kids) == 0 {
-		return 1
+		return estimateHeight(node.Text)
 	}
-	count := 0
-	for _, k := range kids {
-		count += subtreeLeafCount(m, k)
+	total := 0.0
+	for i, k := range kids {
+		if i > 0 {
+			total += verticalGap
+		}
+		total += subtreeHeight(m, k)
 	}
-	return count
+	return total
 }
 
 // relayout re-tidies the whole map after any structural change (a node
@@ -187,15 +242,16 @@ func subtreeLeafCount(m *MapData, node *Node) int {
 // layout like everything else. x is purely parent-relative — the same
 // +280/-260 step childPos uses for a single new node — so every child stays
 // directly adjacent to its actual parent. y is assigned per top branch
-// (root's direct children): each branch reserves an exact contiguous row
-// band (see subtreeLeafCount) on its side (left/right), stacked below the
-// previous same-side branch's band, so no two top branches' rows ever
-// interleave or their edges cross. Within a band, a leaf takes the next row
-// (64px apart) and an internal node centers over its own children's y. A
-// final pass nudges any node down out of any remaining overlap — a safety
-// net for node footprints wider than the standard row spacing (long-
-// wrapped text) — mirroring the single-node guard in
-// avoidCollisionsExcluding.
+// (root's direct children): each branch reserves an exact contiguous pixel
+// band (see subtreeHeight) on its side (left/right), stacked below the
+// previous same-side branch's band, so no two top branches' bands ever
+// interleave, overlap, or cross edges. Within a band, a leaf's y is its
+// place in a top-aligned cumulative stack (its own estimated height plus
+// verticalGap advances the cursor for the next sibling) and an internal
+// node centers over its own children's y. A final pass nudges any node
+// down out of any remaining overlap — a safety net for the gap between
+// estimateHeight's prediction and however a given browser actually wraps
+// the text — mirroring the single-node guard in avoidCollisionsExcluding.
 func relayout(m *MapData) {
 	root := findRootNode(m)
 	if root == nil {
@@ -219,32 +275,35 @@ func relayout(m *MapData) {
 	}
 	assignX(root)
 
-	var assignY func(node *Node, rowStart int) float64
-	assignY = func(node *Node, rowStart int) float64 {
+	var assignY func(node *Node, top float64) float64
+	assignY = func(node *Node, top float64) float64 {
 		kids := childrenOf(m, node.ID)
 		if len(kids) == 0 {
-			node.Y = root.Y + float64(rowStart)*layoutRowHeight
+			node.Y = top
 			return node.Y
 		}
+		cursor := top
 		sum := 0.0
-		cursor := rowStart
-		for _, child := range kids {
+		for i, child := range kids {
+			if i > 0 {
+				cursor += verticalGap
+			}
 			sum += assignY(child, cursor)
-			cursor += subtreeLeafCount(m, child)
+			cursor += subtreeHeight(m, child)
 		}
 		node.Y = sum / float64(len(kids))
 		return node.Y
 	}
 
-	nextRowForSide := map[int]int{}
+	nextOffsetForSide := map[int]float64{}
 	for _, branch := range childrenOf(m, root.ID) {
 		dir := branch.Dir
 		if dir == 0 {
 			dir = 1
 		}
-		start := nextRowForSide[dir]
-		assignY(branch, start)
-		nextRowForSide[dir] = start + subtreeLeafCount(m, branch)
+		offset := nextOffsetForSide[dir]
+		assignY(branch, root.Y+offset)
+		nextOffsetForSide[dir] = offset + subtreeHeight(m, branch) + verticalGap
 	}
 
 	for i := range m.Nodes {

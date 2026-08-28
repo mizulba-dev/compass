@@ -305,22 +305,51 @@ func TestUpdateNodeCannotMoveOrDelete(t *testing.T) {
 // emergent property (no two node footprints overlap after a realistic
 // bulk-add), not a specific internal call sequence, so it should use its
 // own copy of the geometry to catch a real regression rather than a
-// refactor of the production formula.
+// refactor of the production formula. isWideCharFor mirrors isWideRune:
+// CJK/Hangul/fullwidth glyphs render at roughly a full em, wider than the
+// Latin average, and text wraps within the node's inner content width
+// (narrower than its own outer max-width), not the outer width itself.
+func isWideCharFor(r rune) bool {
+	switch {
+	case r >= 0x3000 && r <= 0x30FF,
+		r >= 0x3400 && r <= 0x4DBF,
+		r >= 0x4E00 && r <= 0x9FFF,
+		r >= 0xAC00 && r <= 0xD7A3,
+		r >= 0xF900 && r <= 0xFAFF,
+		r >= 0xFF00 && r <= 0xFFEF:
+		return true
+	}
+	return false
+}
+
+const (
+	estimatedMaxWidth     = 260.0
+	estimatedContentWidth = 232.0
+)
+
 type estimatedRect struct{ x0, y0, x1, y1 float64 }
 
 func estimatedRectFor(x, y float64, text string) estimatedRect {
-	raw := 14*float64(len([]rune(text))) + 40
+	ink := 0.0
+	for _, r := range text {
+		if isWideCharFor(r) {
+			ink += 15
+		} else {
+			ink += 14
+		}
+	}
+	raw := ink + 40
 	width := raw
-	if width > 260 {
-		width = 260
+	if width > estimatedMaxWidth {
+		width = estimatedMaxWidth
 	}
 	if width < 40 {
 		width = 40
 	}
 	lines := 1.0
-	if raw > 260 {
+	if raw > estimatedContentWidth {
 		lines = 1
-		for lines*260 < raw {
+		for lines*estimatedContentWidth < raw {
 			lines++
 		}
 	}
@@ -1043,5 +1072,46 @@ func TestTidyRelayoutsOnDemand(t *testing.T) {
 	}
 	if branch["y"].(float64) != root["y"].(float64) {
 		t.Fatalf("after tidy: a single leaf branch should sit on root's own row, got y=%v (root y=%v)", branch["y"], root["y"])
+	}
+}
+
+// TestRelayoutGivesLongJapaneseSiblingsEnoughRoom is the standing
+// falsification probe for the reported bug: two long Japanese question
+// nodes under the same parent wrap to multiple lines (CJK glyphs render
+// near a full em, wider than the ~14px/rune average that fits Latin text),
+// and the old fixed 64px row height didn't leave room for that — the two
+// footprints overlapped. Reproduces the exact strings from the bug report.
+func TestRelayoutGivesLongJapaneseSiblingsEnoughRoom(t *testing.T) {
+	h := newTestServer(t)
+	id := createCanvas(t, h)
+	rootID, token := placeRoot(t, h, id, "住宅購入")
+
+	rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    rootID,
+		"nodes": []map[string]any{
+			{"text": "絶対に譲れない条件は何ですか？（立地・広さ・性能・間取りなど）", "kind": "question"},
+			{"text": "妥協してもよい条件はどれくらいありますか？（予算・築年数・駅からの距離など）", "kind": "question"},
+			{"text": "いつまでに住み替えたいですか？", "kind": "task"},
+		},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add_nodes: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	m := getMapNoDeliver(t, h, id)
+	var rects []estimatedRect
+	var ids []string
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		ids = append(ids, n["id"].(string))
+		rects = append(rects, estimatedRectFor(n["x"].(float64), n["y"].(float64), n["text"].(string)))
+	}
+	for i := 0; i < len(rects); i++ {
+		for j := i + 1; j < len(rects); j++ {
+			if rectsOverlap(rects[i], rects[j]) {
+				t.Fatalf("long Japanese siblings %s and %s overlap: %+v vs %+v", ids[i], ids[j], rects[i], rects[j])
+			}
+		}
 	}
 }
