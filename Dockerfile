@@ -13,14 +13,14 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/ cmd/
 COPY internal/ internal/
-RUN CGO_ENABLED=0 go build -o /out/compass ./cmd/compass
+RUN CGO_ENABLED=0 go build -o /out/webmcp-demo ./cmd/webmcp-demo
 
 # --- runtime ---
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
-COPY --from=go-build /out/compass ./compass
+COPY --from=go-build /out/webmcp-demo ./webmcp-demo
 COPY --from=web-build /src/web/dist ./web/dist
 ENV STATIC_DIR=/app/web/dist
 EXPOSE 8080
-ENTRYPOINT ["/app/compass"]
+ENTRYPOINT ["/app/webmcp-demo"]

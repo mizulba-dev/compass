@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: compass
+    name: webmcp-demo
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free

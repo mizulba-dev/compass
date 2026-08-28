@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mizulba-dev/compass/internal/api"
-	"github.com/mizulba-dev/compass/internal/store"
-	"github.com/mizulba-dev/compass/internal/testutil"
+	"github.com/mizulba-dev/webmcp-demo/internal/api"
+	"github.com/mizulba-dev/webmcp-demo/internal/store"
+	"github.com/mizulba-dev/webmcp-demo/internal/testutil"
 )
 
 func newTestServer(t *testing.T) http.Handler {

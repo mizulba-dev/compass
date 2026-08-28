@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mizulba-dev/compass/internal/store"
+	"github.com/mizulba-dev/webmcp-demo/internal/store"
 )
 
 // MapData mirrors the v3 "fog map" data model: a freeform mind-map canvas

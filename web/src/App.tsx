@@ -171,7 +171,7 @@ function App() {
       {createPortal(
         <>
           <div className="brand">
-            Compass
+            WebMCP Demo
             <p className="webmcp-status" data-testid="webmcp-status" role={errorMessage ? 'alert' : undefined}>
               {errorMessage ?? webmcpStatusText(webmcpStatus)}
             </p>

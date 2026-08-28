@@ -1,4 +1,4 @@
-# Compass — the fog map
+# WebMCP Demo — think with your own agent on a live map
 
 **A blank freeform canvas where you and your AI grow a mind map together, one branch at a
 time — and "I don't know" (🌫 fog) is a first-class thing to place, not a gap to hide.**
@@ -10,13 +10,13 @@ branches. You drag, delete, and place nodes freely; the agent never moves or rem
 you've placed. Once the map has enough shape, the agent folds it into a harvest: one goal, the
 premises you established, and the next concrete tasks.
 
-Compass is not a to-do app and not a chat log. The map is the product — a structured, spatial
+This demo is not a to-do app and not a chat log. The map is the product — a structured, spatial
 memory of the parts of a problem you and the agent have already worked through, that a plain
 conversation would otherwise lose to scrollback the moment the session ends.
 
 ## Why WebMCP
 
-The canvas is the point, not an implementation detail. Compass exposes its tools entirely
+The canvas is the point, not an implementation detail. The app exposes its tools entirely
 through [WebMCP](https://github.com/webmachinelearning/webmcp) (`navigator.modelContext`) on
 the page itself, rather than a backend MCP server:
 
@@ -24,7 +24,7 @@ the page itself, rather than a backend MCP server:
   edits by hand → the agent's next suggestion reacts to that edit* — only works because agent
   and human are looking at, and acting on, the same live page in the same session.
 - The human's edits (deleting a task, reordering the plan, checking something off) are not
-  passive approvals; they carry judgment the agent doesn't otherwise have. Compass surfaces
+  passive approvals; they carry judgment the agent doesn't otherwise have. The app surfaces
   them straight into the agent's next tool result as `humanActions`.
 - Bring your own agent: because the tools live on the page, whatever assistant you already
   use — with its own memory of you — can pick up a canvas it has never seen before and be
@@ -73,7 +73,7 @@ the page itself, rather than a backend MCP server:
 ## Project layout
 
 ```
-cmd/compass/main.go          HTTP server: API + SSE + static SPA, one origin
+cmd/webmcp-demo/main.go          HTTP server: API + SSE + static SPA, one origin
 internal/store/              Postgres persistence, readToken guard, human-action delivery
 internal/api/                HTTP handlers implementing the map API contract
 web/                         React + TypeScript SPA (Vite)
@@ -93,7 +93,7 @@ cp .env.example .env            # adjust if you like; defaults match docker-comp
 docker compose up -d db         # Postgres on localhost:55432
 cd web && npm ci && npm run build && cd ..
 DATABASE_URL=postgres://compass:compass@localhost:55432/compass?sslmode=disable \
-  PORT=8080 STATIC_DIR=web/dist go run ./cmd/compass
+  PORT=8080 STATIC_DIR=web/dist go run ./cmd/webmcp-demo
 ```
 
 Open `http://localhost:8080` — it creates a new map and redirects to its share URL
@@ -114,7 +114,7 @@ Two browsers currently support calling page-registered tools:
 2. Desktop Chrome with `chrome://flags/#enable-webmcp-testing` enabled (fallback / reviewer
    path).
 
-Open a Compass map URL in either, and ask the connected agent to help you think through
+Open a map URL in either, and ask the connected agent to help you think through
 something — it should discover and call `read_map`, `add_nodes`, and the rest of the tools
 declared in `web/src/webmcp/register.ts`.
 

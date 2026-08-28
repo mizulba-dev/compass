@@ -15,8 +15,8 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/mizulba-dev/compass/internal/api"
-	"github.com/mizulba-dev/compass/internal/store"
+	"github.com/mizulba-dev/webmcp-demo/internal/api"
+	"github.com/mizulba-dev/webmcp-demo/internal/store"
 )
 
 func main() {

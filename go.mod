@@ -1,4 +1,4 @@
-module github.com/mizulba-dev/compass
+module github.com/mizulba-dev/webmcp-demo
 
 go 1.26.6
 

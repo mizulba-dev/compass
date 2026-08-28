@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/mizulba-dev/compass/internal/store"
-	"github.com/mizulba-dev/compass/internal/testutil"
+	"github.com/mizulba-dev/webmcp-demo/internal/store"
+	"github.com/mizulba-dev/webmcp-demo/internal/testutil"
 )
 
 func newStore(t *testing.T) *store.Store {
