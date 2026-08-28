@@ -522,7 +522,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
                     <span className="text">{n.text || ' '}</span>
                     {n.fog && (
                       <span className="fogtag">
-                        <HelpCircle size={12} /> わからない
+                        <HelpCircle size={12} /> don't know
                       </span>
                     )}
                   </>
@@ -544,11 +544,11 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
                         onClick={() => void onEdit({ id: n.id, fog: !n.fog })}
                         data-testid="node-toggle-fog"
                       >
-                        <HelpCircle size={14} /> {n.fog ? '解消した' : 'わからない'}
+                        <HelpCircle size={14} /> {n.fog ? 'Resolved' : "Don't know"}
                       </button>
                     )}
                     <button type="button" onClick={() => startEdit(n)} data-testid="node-start-edit">
-                      <Pencil size={14} /> 編集
+                      <Pencil size={14} /> Edit
                     </button>
                     <button
                       type="button"
@@ -556,7 +556,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
                       data-testid="node-toggle-task"
                     >
                       {n.kind === 'task' ? <CheckSquare size={14} /> : <Square size={14} />}{' '}
-                      {n.kind === 'task' ? 'タスク解除' : 'タスクにする'}
+                      {n.kind === 'task' ? 'Not a task' : 'Make it a task'}
                     </button>
                     {!n.root && (
                       <button
@@ -564,7 +564,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
                         onClick={() => void onEdit({ id: n.id, star: !n.star })}
                         data-testid="node-toggle-star"
                       >
-                        <Star size={14} fill={n.star ? 'currentColor' : 'none'} /> {n.star ? '解除' : '重要'}
+                        <Star size={14} fill={n.star ? 'currentColor' : 'none'} /> {n.star ? 'Unmark' : 'Important'}
                       </button>
                     )}
                     <button
@@ -576,7 +576,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
                       style={{ color: 'var(--danger)' }}
                       data-testid="node-delete"
                     >
-                      <Trash2 size={14} /> 削除
+                      <Trash2 size={14} /> Delete
                     </button>
                   </div>
                 )}
@@ -588,8 +588,8 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
 
       {nodes.length === 0 && (
         <div className="empty-hint">
-          <div className="big">考えたいことを、まず1つ置く</div>
-          <div className="small">下の ＋ か、キャンバスをダブルクリック</div>
+          <div className="big">Put down one thing you want to think through</div>
+          <div className="small">Tap + below, or double-click the canvas</div>
         </div>
       )}
 
@@ -607,13 +607,13 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
       {createPortal(
         <>
           <div className="zoomer">
-            <button type="button" aria-label="拡大" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1.2)}>
+            <button type="button" aria-label="Zoom in" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1.2)}>
               <Plus size={18} />
             </button>
-            <button type="button" aria-label="縮小" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1 / 1.2)}>
+            <button type="button" aria-label="Zoom out" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1 / 1.2)}>
               <Minus size={18} />
             </button>
-            <button type="button" aria-label="全体表示" onClick={fit}>
+            <button type="button" aria-label="Fit to view" onClick={fit}>
               <Maximize size={15} />
             </button>
           </div>
@@ -621,7 +621,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
           <button
             type="button"
             className="add-fab"
-            aria-label="ノードを追加"
+            aria-label="Add node"
             data-testid="add-node-fab"
             onClick={() => {
               const p = toWorld(window.innerWidth / 2, window.innerHeight / 2);

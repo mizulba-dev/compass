@@ -11,19 +11,19 @@ interface HarvestSheetProps {
 export function HarvestSheet({ harvest, nodes, open, onClose }: HarvestSheetProps) {
   const taskNodes = nodes.filter((n) => n.kind === 'task');
   return (
-    <div className={`sheet${open ? ' open' : ''}`} role="dialog" aria-label="計画" data-testid="harvest-sheet">
-      <button type="button" className="close" aria-label="閉じる" onClick={onClose}>
+    <div className={`sheet${open ? ' open' : ''}`} role="dialog" aria-label="Plan" data-testid="harvest-sheet">
+      <button type="button" className="close" aria-label="Close" onClick={onClose}>
         <X size={16} />
       </button>
-      <h2>計画</h2>
-      <p className="sub">地図から抽出した計画です。地図はそのまま残ります。</p>
+      <h2>Plan</h2>
+      <p className="sub">A plan drawn from the map. The map itself stays as is.</p>
       {harvest ? (
         <>
           <h3>GOAL</h3>
           <ul>
             <li>{harvest.goal}</li>
           </ul>
-          <h3>PREMISES — あなたが置いた前提</h3>
+          <h3>PREMISES — what you established</h3>
           <ul>
             {harvest.premises.map((p, i) => (
               <li key={i}>{p}</li>
@@ -44,7 +44,7 @@ export function HarvestSheet({ harvest, nodes, open, onClose }: HarvestSheetProp
           </ul>
         </>
       ) : (
-        <p className="sub">まだ計画はありません。地図が育ったら、エージェントが計画にまとめます。</p>
+        <p className="sub">No plan yet — once the map has grown, ask the agent to fold it into one.</p>
       )}
     </div>
   );

@@ -13,7 +13,7 @@ export const descriptions = {
     'again whenever a write is rejected for a stale state token. Nodes with fog: true ' +
     'are things the human has marked "I don\'t know — let\'s discuss this". Treat all ' +
     'fog-marked nodes as the consultation agenda: when the human refers to the marks in ' +
-    'any wording ("the marked ones", "マークの件", "わからないの件"), address those nodes ' +
+    'any wording, in any language (e.g. "the marked ones", or "マークの件"), address those nodes ' +
     '— explain context, offer options, or grow clarifying branches, then clear the fog ' +
     'with update_node once resolved. Clearing fog is your highest-priority move. The ' +
     'response also carries humanActions: edits the human made directly on the canvas ' +

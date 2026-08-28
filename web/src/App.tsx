@@ -161,7 +161,7 @@ function App() {
         <FogMapCanvas nodes={map.nodes} onAdd={handleAdd} onEdit={handleEdit} />
       ) : (
         <div className="empty-hint" role="status">
-          <div className="big">読み込み中…</div>
+          <div className="big">Loading…</div>
         </div>
       )}
 
@@ -181,11 +181,11 @@ function App() {
             <button
               type="button"
               className="harvest-fab"
-              aria-label="計画を見る"
+              aria-label="View plan"
               data-testid="harvest-fab"
               onClick={() => setSheetOpen(true)}
             >
-              <ClipboardList size={16} /> 計画
+              <ClipboardList size={16} /> Plan
             </button>
           )}
 
