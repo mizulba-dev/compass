@@ -776,3 +776,129 @@ func TestUpdateNodeKindConversionResetsDone(t *testing.T) {
 		t.Fatalf("update_node kind:bogus: want 400, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+// TestRelayoutKeepsChildrenAdjacentAndRespectsPinnedNodes is the standing
+// falsification probe for direction addendum 7's "always tidy" layout pass:
+// after add_nodes grows 3 branches with 3 children each, every child must
+// still sit directly adjacent to its actual parent (+280px right-side /
+// -260px left-side, matching childPos's own single-node placement rule —
+// see TestAddNodesAvoidsOverlapAcrossBranches for the accompanying no-
+// overlap guarantee over the same shape). And once a node has been dragged
+// by the human (Pinned), a later add_nodes call elsewhere in the map must
+// leave that node's coordinates untouched.
+func TestRelayoutKeepsChildrenAdjacentAndRespectsPinnedNodes(t *testing.T) {
+	h := newTestServer(t)
+	id := createCanvas(t, h)
+	rootID, token := placeRoot(t, h, id, "考えたいこと")
+
+	rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    rootID,
+		"nodes": []map[string]any{
+			{"text": "branch A"},
+			{"text": "branch B"},
+			{"text": "branch C"},
+		},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add branches: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m := getMapNoDeliver(t, h, id)
+	token = m["readToken"].(string)
+	var branchIDs []string
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["id"] != rootID {
+			branchIDs = append(branchIDs, n["id"].(string))
+		}
+	}
+
+	for i, branchID := range branchIDs {
+		rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+			"readToken": token,
+			"parent":    branchID,
+			"nodes": []map[string]any{
+				{"text": "child 1"},
+				{"text": "child 2"},
+				{"text": "child 3"},
+			},
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("add children of branch %d: want 200, got %d: %s", i, rec.Code, rec.Body.String())
+		}
+		m = getMapNoDeliver(t, h, id)
+		token = m["readToken"].(string)
+	}
+	byID := map[string]map[string]any{}
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		byID[n["id"].(string)] = n
+	}
+	if len(byID) != 13 { // root + 3 branches + 3*3 children
+		t.Fatalf("want 13 nodes total, got %d", len(byID))
+	}
+
+	// Every non-root node must be exactly +280 (dir>0) or -260 (dir<0) in x
+	// from its actual parent.
+	for id, n := range byID {
+		if n["parent"] == nil {
+			continue // root
+		}
+		parent := byID[n["parent"].(string)]
+		dx := n["x"].(float64) - parent["x"].(float64)
+		dir := n["dir"].(float64)
+		want := 280.0
+		if dir < 0 {
+			want = -260.0
+		}
+		if dx != want {
+			t.Fatalf("node %s: want x offset from parent %v, got %v (parent=%v, node=%v)", id, want, dx, parent["x"], n["x"])
+		}
+	}
+
+	// Pin one deep node by moving it (human), then trigger another relayout
+	// via add_nodes elsewhere: the pinned node's coordinates must survive.
+	var pinnedID string
+	for id, n := range byID {
+		if n["parent"] != nil && byID[n["parent"].(string)]["parent"] != nil {
+			pinnedID = id // a grandchild-of-root (has a non-root parent)
+			break
+		}
+	}
+	if pinnedID == "" {
+		t.Fatal("expected at least one grandchild-of-root node to pin")
+	}
+	rec = postJSON(t, h, "/api/canvas/"+id+"/node/human", map[string]any{
+		"readToken": token,
+		"id":        pinnedID,
+		"x":         9999,
+		"y":         -9999,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pin node via move: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m = getMapNoDeliver(t, h, id)
+	token = m["readToken"].(string)
+
+	rec = postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    rootID,
+		"nodes":     []map[string]any{{"text": "branch D, added after pinning"}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add another branch after pinning: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	final := getMapNoDeliver(t, h, id)
+	for _, raw := range final["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["id"] == pinnedID {
+			if n["x"].(float64) != 9999 || n["y"].(float64) != -9999 {
+				t.Fatalf("pinned node moved by a later add_nodes relayout: want (9999,-9999), got (%v,%v)", n["x"], n["y"])
+			}
+			if n["pinned"] != true {
+				t.Fatalf("want pinned:true on a human-moved node, got %v", n["pinned"])
+			}
+		}
+	}
+}

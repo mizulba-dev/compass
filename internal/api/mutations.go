@@ -142,6 +142,103 @@ func avoidCollisionsExcluding(m *MapData, excludeID string, x, y float64, text s
 	return x, y
 }
 
+// layoutRowHeight and the two layoutDepthStep constants mirror childPos's
+// own literals (64px row spacing, 280px right / 260px left per depth
+// level) — relayout is a full-tree generalization of the same placement
+// rule childPos already applies node-by-node at creation time.
+const (
+	layoutRowHeight      = 64.0
+	layoutDepthStepRight = 280.0
+	layoutDepthStepLeft  = 260.0
+)
+
+func findRootNode(m *MapData) *Node {
+	for i := range m.Nodes {
+		if m.Nodes[i].Root {
+			return &m.Nodes[i]
+		}
+	}
+	return nil
+}
+
+// relayout re-tidies the whole map after a structural change (a node added
+// or removed): every node that isn't the root and hasn't been dragged by a
+// human (Pinned) gets a fresh position. x is purely parent-relative — the
+// same +280/-260 step childPos uses for a single new node — so every child
+// stays directly adjacent to its actual parent regardless of where an
+// ancestor was pinned. y is assigned bottom-up, independently for the left
+// and right halves of the tree: a leaf takes the next row in its side's
+// running sequence (64px apart) and an internal node centers over its own
+// children's y, so growth on one branch never reflows a sibling branch. A
+// pinned node keeps its real position but still consumes a row slot, so
+// siblings around it are spaced as if it were there. A final pass nudges
+// any movable node down out of any remaining overlap — including with a
+// pinned node's footprint, which this step is the only thing that actually
+// respects as an obstacle — mirroring the single-node guard in
+// avoidCollisionsExcluding.
+func relayout(m *MapData) {
+	root := findRootNode(m)
+	if root == nil {
+		return
+	}
+
+	var assignX func(parent *Node)
+	assignX = func(parent *Node) {
+		for _, child := range childrenOf(m, parent.ID) {
+			if !child.Pinned {
+				dir := child.Dir
+				if dir == 0 {
+					dir = 1
+				}
+				if dir > 0 {
+					child.X = parent.X + layoutDepthStepRight
+				} else {
+					child.X = parent.X - layoutDepthStepLeft
+				}
+			}
+			assignX(child)
+		}
+	}
+	assignX(root)
+
+	nextRow := map[int]int{}
+	var assignY func(node *Node) float64
+	assignY = func(node *Node) float64 {
+		kids := childrenOf(m, node.ID)
+		if len(kids) == 0 {
+			dir := node.Dir
+			if dir == 0 {
+				dir = 1
+			}
+			row := nextRow[dir]
+			nextRow[dir] = row + 1
+			if !node.Pinned {
+				node.Y = root.Y + float64(row)*layoutRowHeight
+			}
+			return node.Y
+		}
+		sum := 0.0
+		for _, child := range kids {
+			sum += assignY(child)
+		}
+		if !node.Pinned {
+			node.Y = sum / float64(len(kids))
+		}
+		return node.Y
+	}
+	for _, child := range childrenOf(m, root.ID) {
+		assignY(child)
+	}
+
+	for i := range m.Nodes {
+		n := &m.Nodes[i]
+		if n.Root || n.Pinned {
+			continue
+		}
+		n.X, n.Y = avoidCollisionsExcluding(m, n.ID, n.X, n.Y, n.Text)
+	}
+}
+
 func removeSubtree(m *MapData, id string) {
 	toRemove := map[string]bool{id: true}
 	// Repeatedly sweep for children of anything already marked, since a
@@ -222,6 +319,7 @@ func applyAddNodes(m *MapData, body json.RawMessage) string {
 			CreatedAt: nowISO(),
 		})
 	}
+	relayout(m)
 	return ""
 }
 
@@ -343,6 +441,7 @@ func applyRemoveNode(m *MapData, body json.RawMessage) string {
 		return "the root node cannot be removed"
 	}
 	removeSubtree(m, req.ID)
+	relayout(m)
 	return ""
 }
 

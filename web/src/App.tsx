@@ -177,7 +177,7 @@ function App() {
             </p>
           </div>
 
-          {map?.harvest && (
+          {(map?.harvest || (map?.nodes ?? []).some((n) => n.kind === 'task')) && (
             <button
               type="button"
               className="harvest-fab"
@@ -189,7 +189,13 @@ function App() {
             </button>
           )}
 
-          <HarvestSheet harvest={map?.harvest ?? null} nodes={map?.nodes ?? []} open={sheetOpen} onClose={() => setSheetOpen(false)} />
+          <HarvestSheet
+            harvest={map?.harvest ?? null}
+            nodes={map?.nodes ?? []}
+            open={sheetOpen}
+            onClose={() => setSheetOpen(false)}
+            onToggleDone={(nodeId, done) => void handleEdit({ id: nodeId, done })}
+          />
         </>,
         document.body,
       )}

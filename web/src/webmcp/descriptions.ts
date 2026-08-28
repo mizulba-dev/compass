@@ -20,15 +20,21 @@ export const descriptions = {
     '(adding, editing, moving, deleting, fogging/unfogging, or starring a node) since ' +
     'your last tool call. Read them and react to what they reveal about the human\'s ' +
     'judgment — never silently revert or route around a human edit; their placement and ' +
-    'deletions are final.',
+    'deletions are final. On a fresh map (root only, no other nodes yet), do NOT start ' +
+    'with step branches: first add_nodes 1–3 kind: "question" nodes asking what you need ' +
+    'to know (constraints, deadline, biggest worry), and wait for the human\'s answers ' +
+    '(as their own nodes, or in chat) before proposing any concrete steps.',
   add_nodes:
     'Adds up to 3 new nodes as children of an existing node (pass its id as parent — get ' +
     'ids from read_map). Never add more than 3 in one call, even if more come to mind — ' +
     'make a second call instead; a map that fills up in one shot stops feeling like a ' +
     'conversation. Prefer branching off a node the human just placed or a fogged node ' +
-    'over an already-crowded branch. Set kind: "task" for a concrete actionable step the ' +
-    'human could do ("do X by Y"); "question" for a node that asks the human something; ' +
-    'plain nodes for information or considerations.',
+    'over an already-crowded branch. On a fresh map (root only), your first add_nodes ' +
+    'call should be 1–3 kind: "question" nodes probing what you need to know (constraints, ' +
+    'deadline, biggest worry) — wait for the human\'s answers before proposing concrete ' +
+    'steps, rather than jumping straight to a plan. Set kind: "task" for a concrete ' +
+    'actionable step the human could do ("do X by Y"); "question" for a node that asks the ' +
+    'human something; plain nodes for information or considerations.',
   update_node:
     'Edits an existing node\'s text, and/or clears its fog (unfog: true) once you\'ve ' +
     'given the human enough to resolve it — usually right after add_nodes grew that ' +
@@ -64,6 +70,9 @@ export const descriptions = {
     'map into a plan, wrap up, or finish — for example "let\'s turn this into a plan" or ' +
     '"I think we\'re done here". Never call it just because you added some nodes, and ' +
     'never call it to check what a harvest would look like; opening the harvest view is ' +
-    'the human\'s own action on the page. The map itself is left untouched; harvest is a ' +
-    'snapshot, not a mutation.',
+    'the human\'s own action on the page. When several task nodes have accumulated and the ' +
+    'exploration is settling, proactively OFFER in conversation to fold the map into a ' +
+    'plan — still call this tool only after the human agrees; never call it unprompted ' +
+    'just because you offered. The map itself is left untouched; harvest is a snapshot, ' +
+    'not a mutation.',
 } as const;
