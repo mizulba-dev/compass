@@ -43,6 +43,11 @@ const LONG_PRESS_MS = 500;
 // actually consumed the humanAction yet — the badge is a nudge, not a
 // source of truth.
 const DISCUSS_BADGE_MS = 60000;
+// If a selected node's top edge is closer to the screen's top than this
+// many pixels, the floating toolbar (which normally sits above the node)
+// has nowhere to render without being clipped/off-screen, so it flips to
+// below the node instead.
+const TOOLBAR_MIN_SPACE_ABOVE_PX = 60;
 
 function childOf(nodes: MapNode[], parentId: string): MapNode[] {
   return nodes.filter((n) => n.parent === parentId);
@@ -236,10 +241,30 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
   }
 
   // ---------- discuss ----------
-  const markDiscuss = (node: MapNode) => {
-    onDiscuss(node);
-    const existing = discussTimersRef.current.get(node.id);
+  const clearDiscussTimer = (nodeId: string) => {
+    const existing = discussTimersRef.current.get(nodeId);
     if (existing) clearTimeout(existing);
+    discussTimersRef.current.delete(nodeId);
+  };
+
+  /**
+   * Toggles the 💬 mark: pressing it again while already marked clears the
+   * badge immediately and does NOT record a humanAction (turning it off is
+   * not something the agent needs to react to) — only marking it on records
+   * "discuss". Marking on (re)starts the 60s auto-extinguish timer.
+   */
+  const toggleDiscuss = (node: MapNode) => {
+    if (discussedIds.has(node.id)) {
+      clearDiscussTimer(node.id);
+      setDiscussedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(node.id);
+        return next;
+      });
+      return;
+    }
+    onDiscuss(node);
+    clearDiscussTimer(node.id);
     setDiscussedIds((prev) => new Set(prev).add(node.id));
     const timer = setTimeout(() => {
       discussTimersRef.current.delete(node.id);
@@ -532,7 +557,10 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
 
                 {selected && selected.id === n.id && !isEditing && (
                   <div
-                    className="node-toolbar"
+                    className={
+                      'node-toolbar' +
+                      (view.y + n.y * view.scale < TOOLBAR_MIN_SPACE_ABOVE_PX ? ' below' : '')
+                    }
                     data-testid="node-toolbar"
                     onPointerDown={(e) => e.stopPropagation()}
                     onContextMenu={(e) => e.preventDefault()}
@@ -551,10 +579,10 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
                     </button>
                     <button
                       type="button"
-                      onClick={() => markDiscuss(n)}
+                      onClick={() => toggleDiscuss(n)}
                       data-testid="node-discuss"
                     >
-                      💬
+                      {discussedIds.has(n.id) ? '💬 解除' : '💬 相談'}
                     </button>
                     {!n.root && (
                       <button

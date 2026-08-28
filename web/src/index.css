@@ -120,11 +120,23 @@ body {
   overflow: hidden; overflow-wrap: break-word;
 }
 
+/* left: 50% + top: 0 (percentages resolve against the node's own box,
+   since .node establishes the containing block) plus a translate keyed off
+   the toolbar's OWN size is what actually centers it above the node —
+   translate alone, with left/top left at their auto default, has no
+   defined anchor to center from and can land anywhere depending on the
+   node's content. Because everything here is expressed as percentages
+   (not px), this stays correctly centered/offset at any .world zoom level
+   without any JS math. */
 .node-toolbar {
-  position: absolute; transform: translate(-50%, -120%);
+  position: absolute; left: 50%; top: 0; transform: translate(-50%, -120%);
   display: flex; gap: 2px; background: var(--toolbar-bg); color: var(--toolbar-fg);
   border-radius: 9px; padding: 4px 5px; z-index: 40; box-shadow: var(--shadow); white-space: nowrap;
 }
+/* Fallback when the node is too close to the screen's top edge for the
+   toolbar to fit above it (see TOOLBAR_MIN_SPACE_ABOVE_PX): render below
+   the node instead. top: 100% is the node's own bottom edge. */
+.node-toolbar.below { top: 100%; transform: translate(-50%, 8px); }
 .node-toolbar button {
   background: none; border: none; cursor: pointer; color: inherit;
   font-family: inherit; font-size: .78rem; padding: 3px 8px; border-radius: 6px;
