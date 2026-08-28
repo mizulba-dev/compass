@@ -310,6 +310,15 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
 
   const handleNodePointerDown = (e: React.PointerEvent, node: MapNode) => {
     if (editingId === node.id) return;
+    // Only the primary button (left click) or a touch tap may enter the
+    // drag/click state machine below. A right-click's pointerdown has
+    // button === 2; letting it through raced the contextmenu handler
+    // (whose cancelPendingClick() runs on a different event, at a timing
+    // that isn't guaranteed to land before this handler's own pointerup
+    // schedules a child) and could sprout a child on right-click. Refusing
+    // to even start tracking a non-primary button removes the race
+    // entirely, rather than trying to win it.
+    if (e.pointerType !== 'touch' && e.button !== 0) return;
     e.stopPropagation();
     const el = e.currentTarget as HTMLElement;
     const startX = e.clientX, startY = e.clientY;
