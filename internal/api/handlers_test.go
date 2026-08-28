@@ -679,3 +679,100 @@ func TestTaskKindAndDoneRoundTrip(t *testing.T) {
 		t.Fatalf("2nd consecutive read: want 0 human actions (no re-delivery), got %d", len(actions2))
 	}
 }
+
+// TestUpdateNodeKindConversionResetsDone is the standing falsification
+// probe for direction addendum 6: the agent-facing update_node tool must be
+// able to convert an existing node's kind (e.g. normal -> task), and
+// converting a task back away from "task" must reset its done flag rather
+// than carry a stale completion state into whatever it becomes next.
+func TestUpdateNodeKindConversionResetsDone(t *testing.T) {
+	h := newTestServer(t)
+	id := createCanvas(t, h)
+	rootID, token := placeRoot(t, h, id, "住宅購入")
+
+	rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    rootID,
+		"nodes":     []map[string]any{{"text": "住宅ローンの基本を知る"}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add_nodes: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m := getMapNoDeliver(t, h, id)
+	nodes := m["nodes"].([]any)
+	nodeID := nodes[len(nodes)-1].(map[string]any)["id"].(string)
+	token = m["readToken"].(string)
+
+	// normal -> task via update_node.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/node", map[string]any{
+		"readToken": token,
+		"id":        nodeID,
+		"kind":      "task",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update_node kind:task: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m = getMapNoDeliver(t, h, id)
+	token = m["readToken"].(string)
+	var found map[string]any
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["id"] == nodeID {
+			found = n
+		}
+	}
+	if found["kind"] != "task" {
+		t.Fatalf("want kind task after conversion, got %v", found["kind"])
+	}
+
+	// Mark it done.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/node", map[string]any{
+		"readToken": token,
+		"id":        nodeID,
+		"done":      true,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update_node done:true: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m = getMapNoDeliver(t, h, id)
+	token = m["readToken"].(string)
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["id"] == nodeID && n["done"] != true {
+			t.Fatalf("done:true did not persist before conversion back: %v", n["done"])
+		}
+	}
+
+	// task -> normal must reset done to false, not carry it over.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/node", map[string]any{
+		"readToken": token,
+		"id":        nodeID,
+		"kind":      "normal",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update_node kind:normal: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m = getMapNoDeliver(t, h, id)
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["id"] == nodeID {
+			if n["kind"] != "normal" {
+				t.Fatalf("want kind normal after converting back, got %v", n["kind"])
+			}
+			if n["done"] != false {
+				t.Fatalf("converting away from task must reset done to false, got %v", n["done"])
+			}
+		}
+	}
+
+	// An invalid kind value must be rejected, not silently coerced.
+	token = m["readToken"].(string)
+	rec = postJSON(t, h, "/api/canvas/"+id+"/node", map[string]any{
+		"readToken": token,
+		"id":        nodeID,
+		"kind":      "bogus",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("update_node kind:bogus: want 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}

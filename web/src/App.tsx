@@ -148,6 +148,8 @@ function App() {
       await refreshAndRecord('star', { nodeId: input.id, star: input.star });
     } else if (input.done !== undefined) {
       await refreshAndRecord('done', { nodeId: input.id, done: input.done });
+    } else if (input.kind !== undefined) {
+      await refreshAndRecord('edit', { nodeId: input.id, kind: input.kind });
     } else if (input.text !== undefined) {
       await refreshAndRecord('edit', { nodeId: input.id, text: input.text });
     }

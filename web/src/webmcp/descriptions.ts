@@ -35,9 +35,12 @@ export const descriptions = {
     'fogged node some children. Also accepts done: true/false to mark a task-kind node ' +
     'complete or reopen it — use this when the human says in conversation that something ' +
     'is finished (or that it isn\'t, after all); it is not yours to mark done on your own ' +
-    'judgment. This tool cannot move or re-fog a node one at a time — position is the ' +
-    'human\'s to change freely; the only way you may reposition anything is a human-' +
-    'requested bulk tidy via arrange_nodes. To remove a node instead, use remove_node.',
+    'judgment. Convert a node\'s kind (e.g. kind: "task" when the human asks to turn ' +
+    'steps into tasks, or "question"/"normal") — done resets to false whenever a node ' +
+    'stops being a task, since a completion flag on a non-task node means nothing. This ' +
+    'tool cannot move or re-fog a node one at a time — position is the human\'s to change ' +
+    'freely; the only way you may reposition anything is a human-requested bulk tidy via ' +
+    'arrange_nodes. To remove a node instead, use remove_node.',
   remove_node:
     'Removes a node and its entire subtree. The root cannot be removed. Prefer removing ' +
     'your own (agent-added) nodes when tidying up a branch that turned out to be a dead ' +
@@ -54,8 +57,10 @@ export const descriptions = {
     'server corrects them so nothing ends up on top of anything else.',
   harvest:
     'Folds the grown map into a plan: one goal, the premises the human has established ' +
-    '(their own nodes, not yours), and the next concrete tasks (your leaf nodes with no ' +
-    'children of their own). Call this ONLY when the human explicitly asks to fold the ' +
+    '(their own nodes, not yours), and the next concrete tasks. Before calling this, make ' +
+    'sure the actionable steps exist as kind: "task" nodes (convert with update_node if ' +
+    'needed) — the plan view lists task nodes live, with their done state. Call this ONLY ' +
+    'when the human explicitly asks to fold the ' +
     'map into a plan, wrap up, or finish — for example "let\'s turn this into a plan" or ' +
     '"I think we\'re done here". Never call it just because you added some nodes, and ' +
     'never call it to check what a harvest would look like; opening the harvest view is ' +

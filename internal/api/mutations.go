@@ -7,6 +7,10 @@ import (
 
 var colorPalette = []string{"#F0731F", "#E8489B", "#D9A514", "#57A345", "#2D9BB5", "#7A5AF8"}
 
+func isValidNodeKind(k string) bool {
+	return k == "normal" || k == "question" || k == "task"
+}
+
 func findNodeIndex(m *MapData, id string) int {
 	for i := range m.Nodes {
 		if m.Nodes[i].ID == id {
@@ -269,16 +273,18 @@ func applyAddNodeHuman(m *MapData, body json.RawMessage) string {
 }
 
 // updateNodeRequest backs POST /api/canvas/:id/node (update_node, the
-// agent-facing WebMCP tool). Text, clearing fog, and toggling a task's done
-// flag — there is no field here that could move, delete, or (re-)fog a node
-// — those are human-only (see nodeHumanRequest), and the decode surface
-// enforces it, not just the tool's inputSchema/description.
+// agent-facing WebMCP tool). Text, clearing fog, toggling a task's done
+// flag, and converting a node's kind — there is no field here that could
+// move, delete, or (re-)fog a node — those are human-only (see
+// nodeHumanRequest), and the decode surface enforces it, not just the
+// tool's inputSchema/description.
 type updateNodeRequest struct {
 	tokenEnvelope
 	ID    string  `json:"id"`
 	Text  *string `json:"text,omitempty"`
 	Unfog bool    `json:"unfog,omitempty"`
 	Done  *bool   `json:"done,omitempty"`
+	Kind  *string `json:"kind,omitempty"`
 }
 
 func applyUpdateNode(m *MapData, body json.RawMessage) string {
@@ -290,11 +296,23 @@ func applyUpdateNode(m *MapData, body json.RawMessage) string {
 	if node == nil {
 		return "node not found"
 	}
+	if req.Kind != nil && !isValidNodeKind(*req.Kind) {
+		return "invalid kind: must be normal, question, or task"
+	}
 	if req.Text != nil {
 		node.Text = *req.Text
 	}
 	if req.Unfog {
 		node.Fog = false
+	}
+	if req.Kind != nil {
+		node.Kind = *req.Kind
+		// A node that stops being a task no longer carries a meaningful
+		// done state — reset it so re-converting to task later starts
+		// fresh rather than resurrecting a stale completion flag.
+		if node.Kind != "task" {
+			node.Done = false
+		}
 	}
 	if req.Done != nil {
 		node.Done = *req.Done
@@ -371,7 +389,8 @@ func applyArrangeNodes(m *MapData, body json.RawMessage) string {
 }
 
 // nodeHumanRequest backs POST /api/canvas/:id/node/human: every node edit
-// reserved for the human (move, delete, toggle fog either way, star). No
+// reserved for the human (move, delete, toggle fog either way, star, and
+// converting a node's kind — e.g. the right-click "タスクにする" toggle). No
 // WebMCP tool ever calls this endpoint.
 type nodeHumanRequest struct {
 	tokenEnvelope
@@ -382,6 +401,7 @@ type nodeHumanRequest struct {
 	Fog    *bool    `json:"fog,omitempty"`
 	Star   *bool    `json:"star,omitempty"`
 	Done   *bool    `json:"done,omitempty"`
+	Kind   *string  `json:"kind,omitempty"`
 	Delete bool     `json:"delete,omitempty"`
 }
 
@@ -396,6 +416,9 @@ func applyNodeHuman(m *MapData, body json.RawMessage) string {
 	if req.Delete {
 		removeSubtree(m, req.ID)
 		return ""
+	}
+	if req.Kind != nil && !isValidNodeKind(*req.Kind) {
+		return "invalid kind: must be normal, question, or task"
 	}
 	node := findNode(m, req.ID)
 	if req.Text != nil {
@@ -414,6 +437,12 @@ func applyNodeHuman(m *MapData, body json.RawMessage) string {
 	}
 	if req.Star != nil {
 		node.Star = *req.Star
+	}
+	if req.Kind != nil {
+		node.Kind = *req.Kind
+		if node.Kind != "task" {
+			node.Done = false
+		}
 	}
 	if req.Done != nil {
 		node.Done = *req.Done

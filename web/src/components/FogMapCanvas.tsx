@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { HelpCircle, Pencil, Star, Trash2, Sparkles, Plus, Minus, Maximize, Square, CheckSquare } from 'lucide-react';
-import type { MapNode } from '../types';
+import type { MapNode, NodeKind } from '../types';
 
 export interface AddNodeInput {
   text: string;
@@ -18,6 +18,7 @@ export interface EditNodeInput {
   fog?: boolean;
   star?: boolean;
   done?: boolean;
+  kind?: NodeKind;
   delete?: boolean;
 }
 
@@ -25,7 +26,7 @@ interface FogMapCanvasProps {
   nodes: MapNode[];
   /** Adds a node placed directly by the human; resolves with the new node's id once persisted (or undefined if the write failed). */
   onAdd: (input: AddNodeInput) => Promise<string | undefined>;
-  /** Applies a human edit (move/fog/star/done/delete/text); resolves once persisted. */
+  /** Applies a human edit (move/fog/star/done/kind/delete/text); resolves once persisted. */
   onEdit: (input: EditNodeInput) => Promise<void>;
 }
 
@@ -548,6 +549,14 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
                     )}
                     <button type="button" onClick={() => startEdit(n)} data-testid="node-start-edit">
                       <Pencil size={14} /> 編集
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onEdit({ id: n.id, kind: n.kind === 'task' ? 'normal' : 'task' })}
+                      data-testid="node-toggle-task"
+                    >
+                      {n.kind === 'task' ? <CheckSquare size={14} /> : <Square size={14} />}{' '}
+                      {n.kind === 'task' ? 'タスク解除' : 'タスクにする'}
                     </button>
                     {!n.root && (
                       <button

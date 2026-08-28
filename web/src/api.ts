@@ -1,4 +1,4 @@
-import type { FogMap } from './types';
+import type { FogMap, NodeKind } from './types';
 
 /** Thrown when a write is rejected for a missing or stale readToken. */
 export class StaleTokenError extends Error {}
@@ -64,12 +64,23 @@ export async function addNodeHuman(
 
 /**
  * Every node edit reserved for the human: move, delete (with its subtree),
- * toggle fog either way, star. No WebMCP tool calls this endpoint.
+ * toggle fog either way, star, convert kind. No WebMCP tool calls this
+ * endpoint.
  */
 export async function editNodeHuman(
   id: string,
   readToken: string,
-  edit: { id: string; text?: string; x?: number; y?: number; fog?: boolean; star?: boolean; done?: boolean; delete?: boolean },
+  edit: {
+    id: string;
+    text?: string;
+    x?: number;
+    y?: number;
+    fog?: boolean;
+    star?: boolean;
+    done?: boolean;
+    kind?: NodeKind;
+    delete?: boolean;
+  },
 ): Promise<{ readToken: string }> {
   return postWrite(`/api/canvas/${id}/node/human`, { readToken, ...edit });
 }

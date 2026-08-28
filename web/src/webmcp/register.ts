@@ -213,6 +213,7 @@ function registerToolsOn(modelContext: ModelContext): void {
         text: { type: 'string' },
         unfog: { type: 'boolean', description: 'set true to clear this node\'s fog; there is no way to set fog on through this tool' },
         done: { type: 'boolean', description: 'mark a task-kind node done (true) or reopen it (false)' },
+        kind: { type: 'string', enum: ['normal', 'question', 'task'], description: 'convert this node to a different kind' },
       },
       required: ['id'],
       additionalProperties: false,
