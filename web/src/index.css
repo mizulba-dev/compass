@@ -37,6 +37,10 @@
 }
 
 * { box-sizing: border-box; }
+/* overscroll-behavior: none blocks the browser's elastic bounce (trackpad
+   overscroll on macOS/iOS) that otherwise moves the whole page in response
+   to a pan gesture our own wheel handler didn't fully absorb. */
+html, body { overscroll-behavior: none; }
 html, body, #root { height: 100%; }
 body {
   margin: 0;

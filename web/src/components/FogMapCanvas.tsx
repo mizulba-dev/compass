@@ -141,19 +141,51 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
     });
   };
 
-  // Trackpad convention (matches Miro): ctrlKey on a wheel event means a
-  // pinch gesture (or an explicit Ctrl+wheel), so it zooms — smoothly,
-  // proportional to deltaY, rather than in fixed 1.08x steps, since a pinch
-  // reports a continuous stream of small deltas. Without ctrlKey, a wheel
-  // event is two-finger scroll and should pan the map, never zoom it.
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (e.ctrlKey) {
-      zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
-    } else {
-      setView((v) => ({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }));
-    }
-  };
+  // Trackpad wheel/gesture handling is bound at the window level, not just
+  // on .canvas: a pointer over any fixed chrome (zoom buttons, the + FAB,
+  // the brand/hint-bar corners) never reaches .canvas's own onWheel, so the
+  // browser's native pinch-to-zoom / elastic overscroll fires there instead
+  // — which is what a "the whole page zoomed/bounced" report actually is,
+  // not the portal fix from the previous batch (that one was real but
+  // didn't reproduce the symptom; this is the actual cause). Binding on
+  // window with { passive: false } lets us preventDefault() everywhere,
+  // while still carving out the harvest sheet and in-progress text editing
+  // so their native scroll/selection keeps working.
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('.sheet, .node.editing')) return;
+      e.preventDefault();
+      if (e.ctrlKey) {
+        // Trackpad convention (matches Miro): ctrlKey on a wheel event
+        // means a pinch gesture (or an explicit Ctrl+wheel), so it zooms —
+        // smoothly, proportional to deltaY, rather than in fixed 1.08x
+        // steps, since a pinch reports a continuous stream of small deltas.
+        zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
+      } else {
+        // Without ctrlKey, a wheel event is two-finger scroll and should
+        // pan the map, never zoom it.
+        setView((v) => ({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }));
+      }
+    };
+    window.addEventListener('wheel', onWheel, { passive: false });
+    return () => window.removeEventListener('wheel', onWheel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Safari synthesizes gesturestart/change/end for pinch instead of ctrlKey
+  // wheel events; there's no standard TS lib type for them, hence the casts.
+  useEffect(() => {
+    const preventGesture = (e: Event) => e.preventDefault();
+    document.addEventListener('gesturestart', preventGesture as EventListener);
+    document.addEventListener('gesturechange', preventGesture as EventListener);
+    document.addEventListener('gestureend', preventGesture as EventListener);
+    return () => {
+      document.removeEventListener('gesturestart', preventGesture as EventListener);
+      document.removeEventListener('gesturechange', preventGesture as EventListener);
+      document.removeEventListener('gestureend', preventGesture as EventListener);
+    };
+  }, []);
 
   const fit = () => {
     if (nodes.length === 0) {
@@ -393,7 +425,6 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
         className="canvas"
         onPointerDown={handleCanvasPointerDown}
         onDoubleClick={handleCanvasDoubleClick}
-        onWheel={handleWheel}
       >
         <div
           ref={worldRef}
