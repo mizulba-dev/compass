@@ -20,8 +20,8 @@ export interface EditNodeInput {
 
 interface FogMapCanvasProps {
   nodes: MapNode[];
-  /** Adds a node placed directly by the human; resolves once persisted. */
-  onAdd: (input: AddNodeInput) => Promise<void>;
+  /** Adds a node placed directly by the human; resolves with the new node's id once persisted (or undefined if the write failed). */
+  onAdd: (input: AddNodeInput) => Promise<string | undefined>;
   /** Applies a human edit (move/fog/star/delete/text); resolves once persisted. */
   onEdit: (input: EditNodeInput) => Promise<void>;
 }
@@ -125,18 +125,29 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
   };
 
   // ---------- add ----------
+  // Mirrors the mock: create an empty node and drop straight into inline
+  // editing, rather than prompting for text up front. window.prompt() was
+  // tried first but is suppressed in some embedded browsers (e.g. ChatGPT's
+  // in-app browser), which would make node creation silently do nothing in
+  // the primary target environment.
   async function placeFreeNode(x: number, y: number) {
     const isFirst = nodes.length === 0;
-    const text = window.prompt(isFirst ? '考えたいことを入力' : 'ノードの内容')?.trim();
-    if (!text) return;
-    await onAdd({ text, x: isFirst ? x - 90 : x, y: isFirst ? y - 20 : y });
+    const newId = await onAdd({ text: '', x: isFirst ? x - 90 : x, y: isFirst ? y - 20 : y });
+    if (newId) {
+      setSelectedId(null);
+      setEditingId(newId);
+      setEditingText('');
+    }
   }
 
   async function addChild(parent: MapNode) {
-    const text = window.prompt('ノードの内容')?.trim();
-    if (!text) return;
     const pos = childPos(nodes, parent);
-    await onAdd({ text, x: pos.x, y: pos.y, parent: parent.id });
+    const newId = await onAdd({ text: '', x: pos.x, y: pos.y, parent: parent.id });
+    if (newId) {
+      setSelectedId(null);
+      setEditingId(newId);
+      setEditingText('');
+    }
   }
 
   // ---------- node interaction ----------
@@ -252,6 +263,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
               n.kind === 'question' ? 'question' : '',
               n.fog ? 'fogged' : '',
               selectedId === n.id ? 'selected' : '',
+              isEditing ? 'editing' : '',
             ]
               .filter(Boolean)
               .join(' ');
@@ -272,9 +284,20 @@ export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
                   <textarea
                     className="edit-input"
                     data-testid="node-edit-input"
+                    rows={1}
                     autoFocus
                     value={editingText}
-                    onChange={(e) => setEditingText(e.target.value)}
+                    onChange={(e) => {
+                      setEditingText(e.target.value);
+                      const el = e.target;
+                      el.style.height = 'auto';
+                      el.style.height = el.scrollHeight + 'px';
+                    }}
+                    onFocus={(e) => {
+                      const el = e.target;
+                      el.style.height = 'auto';
+                      el.style.height = el.scrollHeight + 'px';
+                    }}
                     onBlur={() => void commitEdit()}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {

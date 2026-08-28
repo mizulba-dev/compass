@@ -1,11 +1,12 @@
-// Smoke coverage for the v3 fog-map canvas UI: root display -> add a node
-// via the API directly (mirroring what a WebMCP add_nodes tool call would
-// do) -> drag the human-created root -> select + toggle fog on the added
-// node. Locators are scoped to visible elements (data-testid attributes on
-// the actual UI), per project convention. The canvas's own node-creation
-// UI uses window.prompt(), so this scenario auto-accepts prompts by message
-// text rather than driving them for the human-placement path — the API
-// call below stands in for "the agent added a node".
+// Smoke coverage for the v3 fog-map canvas UI: root placement via inline
+// editing (dblclick -> type -> Enter, mirroring the actual human flow) ->
+// add a node via the API directly (mirroring what a WebMCP add_nodes tool
+// call would do) -> drag the human-created root -> select + toggle fog on
+// the added node. Locators are scoped to visible elements (data-testid
+// attributes on the actual UI), per project convention. Node creation uses
+// inline contenteditable-style editing rather than window.prompt() (which
+// is suppressed in some embedded browsers), so this scenario drives the
+// same keystrokes a human would type.
 export default async ({
   page,
   mark,
@@ -15,12 +16,13 @@ export default async ({
   mark: (label: string) => Promise<void> | void;
   baseUrl: string;
 }) => {
-  page.on('dialog', (d) => d.accept('住宅購入'));
-
   await page.goto(baseUrl);
   await page.waitForURL(/\/c\//);
   await page.dblclick('.canvas', { position: { x: 300, y: 300 } });
-  await page.waitForSelector('[data-testid="map-node"]');
+  await page.waitForSelector('[data-testid="node-edit-input"]');
+  await page.keyboard.type('住宅購入');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('[data-testid="map-node"]:not(.editing)');
   await mark('root-placed');
 
   const rootId = await page.getAttribute('[data-testid="map-node"]', 'data-node-id');

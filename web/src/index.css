@@ -95,9 +95,18 @@ body {
   font-family: ui-monospace, monospace; margin-top: 2px;
 }
 .node .text { white-space: pre-wrap; overflow-wrap: break-word; }
+/* A fixed width (not 100%) while editing: the node itself is width:
+   max-content, so a percentage-width child has no definite containing
+   block to resolve against while the node is still empty (a new node
+   starts with no text) — that's the same "narrows to nothing, then wraps
+   character-by-character" failure mode as an unset width elsewhere on this
+   page, just triggered by data flow instead of a fixed CSS width. A fixed
+   px width sidesteps it and gives editing a comfortable minimum size. */
 .node .edit-input {
-  width: 100%; min-width: 120px; background: transparent; color: inherit;
+  display: block; width: 200px; max-width: 100%;
+  background: transparent; color: inherit;
   border: none; outline: none; font: inherit; resize: none; padding: 0;
+  overflow: hidden; overflow-wrap: break-word;
 }
 
 .node-toolbar {

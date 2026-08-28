@@ -130,16 +130,17 @@ function App() {
     await recordHumanAction(id, actionType, data);
   };
 
-  const handleAdd = async (input: AddNodeInput) => {
-    if (!id) return;
+  const handleAdd = async (input: AddNodeInput): Promise<string | undefined> => {
+    if (!id) return undefined;
     const beforeIds = new Set((map?.nodes ?? []).map((n) => n.id));
     const ok = await writeWithStaleTokenRetry((readToken) => addNodeHuman(id, readToken, input));
-    if (!ok) return;
+    if (!ok) return undefined;
     const fresh = await getMap(id);
     setMap(fresh);
     readTokenRef.current = fresh.readToken;
     const created = fresh.nodes.find((n) => !beforeIds.has(n.id));
     await recordHumanAction(id, 'add', { nodeId: created?.id, text: input.text, parent: input.parent ?? null });
+    return created?.id;
   };
 
   const handleEdit = async (input: EditNodeInput) => {
