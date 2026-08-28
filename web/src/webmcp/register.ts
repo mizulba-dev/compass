@@ -85,15 +85,15 @@ async function write(pathSuffix: string, body: Record<string, unknown>): Promise
   return ok(await refresh());
 }
 
-const TOOL_COUNT = 4;
+const TOOL_COUNT = 5;
 const POLL_INTERVAL_MS = 250;
 const POLL_TIMEOUT_MS = 20000;
 
 let registered = false;
 
 /**
- * Registers Compass's 4 WebMCP tools (read_map / add_nodes / update_node /
- * harvest) on navigator.modelContext and document.modelContext, tolerating
+ * Registers Compass's 5 WebMCP tools (read_map / add_nodes / update_node /
+ * remove_node / harvest) on navigator.modelContext and document.modelContext, tolerating
  * a host (e.g. ChatGPT's in-app browser) that injects modelContext onto the
  * page asynchronously, after this module already ran. If present at call
  * time, tools register immediately and synchronously, with no network or
@@ -147,7 +147,7 @@ function findModelContextHosts(): ModelContext[] {
   return hosts;
 }
 
-/** Registers all 4 tools on every distinct WebMCP host present, if this hasn't already run. Returns whether tools are registered (either just now, or already). */
+/** Registers all 5 tools on every distinct WebMCP host present, if this hasn't already run. Returns whether tools are registered (either just now, or already). */
 function tryRegisterOnce(): boolean {
   if (registered) return true;
   const hosts = findModelContextHosts();
@@ -217,6 +217,20 @@ function registerToolsOn(modelContext: ModelContext): void {
       additionalProperties: false,
     },
     execute: (args) => write('/node', args),
+  });
+
+  modelContext.registerTool({
+    name: 'remove_node',
+    description: descriptions.remove_node,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    execute: (args) => write('/node/remove', args),
   });
 
   modelContext.registerTool({

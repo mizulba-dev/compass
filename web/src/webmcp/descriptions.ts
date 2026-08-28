@@ -25,8 +25,13 @@ export const descriptions = {
   update_node:
     'Edits an existing node\'s text, and/or clears its fog (unfog: true) once you\'ve ' +
     'given the human enough to resolve it — usually right after add_nodes grew that ' +
-    'fogged node some children. This tool cannot move, delete, or re-fog a node: ' +
-    'position and removal are the human\'s alone; never suggest otherwise.',
+    'fogged node some children. This tool cannot move or re-fog a node: position is the ' +
+    'human\'s alone; never suggest otherwise. To remove a node instead, use remove_node.',
+  remove_node:
+    'Removes a node and its entire subtree. The root cannot be removed. Prefer removing ' +
+    'your own (agent-added) nodes when tidying up a branch that turned out to be a dead ' +
+    'end; ask the human in conversation before removing nodes they placed — their ' +
+    'judgment about what stays on the map is not yours to override unilaterally.',
   harvest:
     'Folds the grown map into a plan: one goal, the premises the human has established ' +
     '(their own nodes, not yours), and the next concrete tasks (your leaf nodes with no ' +

@@ -287,6 +287,32 @@ func applyUpdateNode(m *MapData, body json.RawMessage) string {
 	return ""
 }
 
+// removeNodeRequest backs POST /api/canvas/:id/node/remove (remove_node,
+// the agent-facing WebMCP tool). Removes a node and its entire subtree —
+// the same removal semantics as the human's delete — but the root is
+// off-limits: an agent can prune branches it grew, never erase the map's
+// starting point.
+type removeNodeRequest struct {
+	tokenEnvelope
+	ID string `json:"id"`
+}
+
+func applyRemoveNode(m *MapData, body json.RawMessage) string {
+	var req removeNodeRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		return "invalid JSON body"
+	}
+	node := findNode(m, req.ID)
+	if node == nil {
+		return "node not found"
+	}
+	if node.Root {
+		return "the root node cannot be removed"
+	}
+	removeSubtree(m, req.ID)
+	return ""
+}
+
 // nodeHumanRequest backs POST /api/canvas/:id/node/human: every node edit
 // reserved for the human (move, delete, toggle fog either way, star). No
 // WebMCP tool ever calls this endpoint.

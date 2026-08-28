@@ -416,3 +416,85 @@ func TestAddNodesAvoidsOverlapAcrossBranches(t *testing.T) {
 		}
 	}
 }
+
+// TestRemoveNodeDeletesSubtreeButNotRoot is the standing falsification
+// probe for the remove_node WebMCP tool: it must remove a node and its
+// entire subtree, must refuse to remove the root with 400, and the removal
+// must actually be visible on a subsequent read.
+func TestRemoveNodeDeletesSubtreeButNotRoot(t *testing.T) {
+	h := newTestServer(t)
+	id := createCanvas(t, h)
+	rootID, token := placeRoot(t, h, id, "考えたいこと")
+
+	rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    rootID,
+		"nodes":     []map[string]any{{"text": "ブランチA"}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add branch: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m := getMapNoDeliver(t, h, id)
+	token = m["readToken"].(string)
+	var branchID string
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["id"] != rootID {
+			branchID = n["id"].(string)
+		}
+	}
+
+	rec = postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    branchID,
+		"nodes":     []map[string]any{{"text": "子1"}, {"text": "子2"}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add children: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m = getMapNoDeliver(t, h, id)
+	token = m["readToken"].(string)
+	if len(m["nodes"].([]any)) != 4 {
+		t.Fatalf("want 4 nodes before removal, got %d", len(m["nodes"].([]any)))
+	}
+
+	// Removing the root must be rejected with 400.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/node/remove", map[string]any{
+		"readToken": token,
+		"id":        rootID,
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("remove root: want 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m = getMapNoDeliver(t, h, id)
+	if len(m["nodes"].([]any)) != 4 {
+		t.Fatalf("rejected root removal must not change node count: want 4, got %d", len(m["nodes"].([]any)))
+	}
+
+	// Removing an unknown id must fail without mutating state.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/node/remove", map[string]any{
+		"readToken": token,
+		"id":        "does-not-exist",
+	})
+	if rec.Code == http.StatusOK {
+		t.Fatalf("remove unknown id: want an error status, got 200")
+	}
+
+	// Removing the branch must take its 2 children with it, leaving only the root.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/node/remove", map[string]any{
+		"readToken": token,
+		"id":        branchID,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("remove branch: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	final := getMapNoDeliver(t, h, id)
+	finalNodes := final["nodes"].([]any)
+	if len(finalNodes) != 1 {
+		t.Fatalf("want 1 node (just root) after subtree removal, got %d: %v", len(finalNodes), finalNodes)
+	}
+	if finalNodes[0].(map[string]any)["id"] != rootID {
+		t.Fatalf("the surviving node must be the root, got %v", finalNodes[0])
+	}
+}

@@ -75,6 +75,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/canvas/{id}/nodes", a.writeHandler(applyAddNodes))
 	mux.HandleFunc("POST /api/canvas/{id}/nodes/human", a.writeHandler(applyAddNodeHuman))
 	mux.HandleFunc("POST /api/canvas/{id}/node", a.writeHandler(applyUpdateNode))
+	mux.HandleFunc("POST /api/canvas/{id}/node/remove", a.writeHandler(applyRemoveNode))
 	mux.HandleFunc("POST /api/canvas/{id}/node/human", a.writeHandler(applyNodeHuman))
 	mux.HandleFunc("POST /api/canvas/{id}/harvest", a.writeHandler(applyHarvest))
 }
