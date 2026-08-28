@@ -25,13 +25,24 @@ export const descriptions = {
   update_node:
     'Edits an existing node\'s text, and/or clears its fog (unfog: true) once you\'ve ' +
     'given the human enough to resolve it — usually right after add_nodes grew that ' +
-    'fogged node some children. This tool cannot move or re-fog a node: position is the ' +
-    'human\'s alone; never suggest otherwise. To remove a node instead, use remove_node.',
+    'fogged node some children. This tool cannot move or re-fog a node one at a time — ' +
+    'position is the human\'s to change freely; the only way you may reposition anything ' +
+    'is a human-requested bulk tidy via arrange_nodes. To remove a node instead, use ' +
+    'remove_node.',
   remove_node:
     'Removes a node and its entire subtree. The root cannot be removed. Prefer removing ' +
     'your own (agent-added) nodes when tidying up a branch that turned out to be a dead ' +
     'end; ask the human in conversation before removing nodes they placed — their ' +
     'judgment about what stays on the map is not yours to override unilaterally.',
+  arrange_nodes:
+    'Repositions nodes in bulk, tidying up the map\'s layout. Only use this when the ' +
+    'human explicitly asks you to tidy, arrange, or organize the map (e.g. "can you ' +
+    'clean this up?") — never rearrange nodes on your own initiative just because the ' +
+    'layout looks messy to you; a map you\'re free to reflow at will stops feeling like ' +
+    'the human\'s own space. Read the map first, then propose coordinates that keep each ' +
+    'branch\'s nodes spatially grouped together (not scattered) and close to their parent. ' +
+    'You don\'t need to avoid overlaps yourself — send your best-guess coordinates and the ' +
+    'server corrects them so nothing ends up on top of anything else.',
   harvest:
     'Folds the grown map into a plan: one goal, the premises the human has established ' +
     '(their own nodes, not yours), and the next concrete tasks (your leaf nodes with no ' +

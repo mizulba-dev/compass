@@ -110,10 +110,21 @@ func rectsOverlap(a, b rect) bool {
 // existing node (server-placed or human-pinned) is never repositioned by
 // this or any other path, so a human's placement is permanent.
 func avoidCollisions(m *MapData, x, y float64, text string) (float64, float64) {
+	return avoidCollisionsExcluding(m, "", x, y, text)
+}
+
+// avoidCollisionsExcluding is avoidCollisions for the arrange_nodes case: a
+// node that already exists on the map is being repositioned, so it must not
+// collide with itself at its old position — excludeID skips it from the
+// obstacle set.
+func avoidCollisionsExcluding(m *MapData, excludeID string, x, y float64, text string) (float64, float64) {
 	for attempt := 0; attempt < 50; attempt++ {
 		cand := estimateRect(x, y, text)
 		conflict := false
 		for i := range m.Nodes {
+			if m.Nodes[i].ID == excludeID {
+				continue
+			}
 			if rectsOverlap(cand, estimateRect(m.Nodes[i].X, m.Nodes[i].Y, m.Nodes[i].Text)) {
 				conflict = true
 				break
@@ -310,6 +321,48 @@ func applyRemoveNode(m *MapData, body json.RawMessage) string {
 		return "the root node cannot be removed"
 	}
 	removeSubtree(m, req.ID)
+	return ""
+}
+
+// arrangeNodesRequest backs POST /api/canvas/:id/nodes/arrange
+// (arrange_nodes, the agent-facing WebMCP tool): a bulk reposition, used
+// when the human explicitly asks to tidy up the map. All-or-nothing: an
+// unknown id anywhere in the batch rejects the whole call before any
+// position changes.
+type arrangeNodesRequest struct {
+	tokenEnvelope
+	Moves []arrangeMoveInput `json:"moves"`
+}
+
+type arrangeMoveInput struct {
+	ID string  `json:"id"`
+	X  float64 `json:"x"`
+	Y  float64 `json:"y"`
+}
+
+func applyArrangeNodes(m *MapData, body json.RawMessage) string {
+	var req arrangeNodesRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		return "invalid JSON body"
+	}
+	if len(req.Moves) == 0 {
+		return "moves must have at least 1 item"
+	}
+	for _, mv := range req.Moves {
+		if findNode(m, mv.ID) == nil {
+			return "node not found: " + mv.ID
+		}
+	}
+	// Each move is corrected against collisions before it's applied, using
+	// the map's current state — including any earlier moves already
+	// applied in this same batch — so a sloppy set of AI-proposed
+	// coordinates still lands with zero overlap.
+	for _, mv := range req.Moves {
+		node := findNode(m, mv.ID)
+		x, y := avoidCollisionsExcluding(m, mv.ID, mv.X, mv.Y, node.Text)
+		node.X = x
+		node.Y = y
+	}
 	return ""
 }
 

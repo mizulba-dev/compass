@@ -498,3 +498,96 @@ func TestRemoveNodeDeletesSubtreeButNotRoot(t *testing.T) {
 		t.Fatalf("the surviving node must be the root, got %v", finalNodes[0])
 	}
 }
+
+// TestArrangeNodesMovesAndAvoidsCollisions is the standing falsification
+// probe for arrange_nodes: a bulk move must actually reposition every node,
+// an unknown id anywhere in the batch must reject the whole call (400,
+// state unchanged), and colliding target coordinates must be corrected so
+// no two nodes end up overlapping.
+func TestArrangeNodesMovesAndAvoidsCollisions(t *testing.T) {
+	h := newTestServer(t)
+	id := createCanvas(t, h)
+	rootID, token := placeRoot(t, h, id, "考えたいこと")
+
+	rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    rootID,
+		"nodes":     []map[string]any{{"text": "枝A"}, {"text": "枝B"}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add branches: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	m := getMapNoDeliver(t, h, id)
+	token = m["readToken"].(string)
+	var branchAID, branchBID string
+	for _, raw := range m["nodes"].([]any) {
+		n := raw.(map[string]any)
+		switch n["text"] {
+		case "枝A":
+			branchAID = n["id"].(string)
+		case "枝B":
+			branchBID = n["id"].(string)
+		}
+	}
+
+	// Unknown id in the batch must reject the whole call, changing nothing.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/nodes/arrange", map[string]any{
+		"readToken": token,
+		"moves": []map[string]any{
+			{"id": rootID, "x": 500, "y": 500},
+			{"id": "does-not-exist", "x": 0, "y": 0},
+		},
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("arrange with unknown id: want 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	unchanged := getMapNoDeliver(t, h, id)
+	for _, raw := range unchanged["nodes"].([]any) {
+		n := raw.(map[string]any)
+		if n["id"] == rootID && n["x"].(float64) == 500 {
+			t.Fatalf("rejected arrange must not partially apply: root x was changed to %v", n["x"])
+		}
+	}
+
+	// Empty moves must be rejected too.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/nodes/arrange", map[string]any{
+		"readToken": token,
+		"moves":     []map[string]any{},
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("arrange with empty moves: want 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// A real arrange call: send colliding coordinates for root, branch A,
+	// and branch B (all the same point) — the server must correct them so
+	// none overlap, while still actually moving them near the requested spot.
+	rec = postJSON(t, h, "/api/canvas/"+id+"/nodes/arrange", map[string]any{
+		"readToken": token,
+		"moves": []map[string]any{
+			{"id": rootID, "x": 1000, "y": 1000},
+			{"id": branchAID, "x": 1000, "y": 1000},
+			{"id": branchBID, "x": 1000, "y": 1000},
+		},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("arrange: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	final := getMapNoDeliver(t, h, id)
+	var rects []estimatedRect
+	for _, raw := range final["nodes"].([]any) {
+		n := raw.(map[string]any)
+		x := n["x"].(float64)
+		if x < 900 {
+			t.Fatalf("node %v was not moved toward the requested position: x=%v", n["id"], x)
+		}
+		rects = append(rects, estimatedRectFor(x, n["y"].(float64), n["text"].(string)))
+	}
+	for i := 0; i < len(rects); i++ {
+		for j := i + 1; j < len(rects); j++ {
+			if rectsOverlap(rects[i], rects[j]) {
+				t.Fatalf("arranged nodes still overlap: %+v vs %+v", rects[i], rects[j])
+			}
+		}
+	}
+}

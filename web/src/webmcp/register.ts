@@ -85,15 +85,15 @@ async function write(pathSuffix: string, body: Record<string, unknown>): Promise
   return ok(await refresh());
 }
 
-const TOOL_COUNT = 5;
+const TOOL_COUNT = 6;
 const POLL_INTERVAL_MS = 250;
 const POLL_TIMEOUT_MS = 20000;
 
 let registered = false;
 
 /**
- * Registers Compass's 5 WebMCP tools (read_map / add_nodes / update_node /
- * remove_node / harvest) on navigator.modelContext and document.modelContext, tolerating
+ * Registers Compass's 6 WebMCP tools (read_map / add_nodes / update_node /
+ * remove_node / arrange_nodes / harvest) on navigator.modelContext and document.modelContext, tolerating
  * a host (e.g. ChatGPT's in-app browser) that injects modelContext onto the
  * page asynchronously, after this module already ran. If present at call
  * time, tools register immediately and synchronously, with no network or
@@ -147,7 +147,7 @@ function findModelContextHosts(): ModelContext[] {
   return hosts;
 }
 
-/** Registers all 5 tools on every distinct WebMCP host present, if this hasn't already run. Returns whether tools are registered (either just now, or already). */
+/** Registers all 6 tools on every distinct WebMCP host present, if this hasn't already run. Returns whether tools are registered (either just now, or already). */
 function tryRegisterOnce(): boolean {
   if (registered) return true;
   const hosts = findModelContextHosts();
@@ -231,6 +231,32 @@ function registerToolsOn(modelContext: ModelContext): void {
       additionalProperties: false,
     },
     execute: (args) => write('/node/remove', args),
+  });
+
+  modelContext.registerTool({
+    name: 'arrange_nodes',
+    description: descriptions.arrange_nodes,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        moves: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              x: { type: 'number' },
+              y: { type: 'number' },
+            },
+            required: ['id', 'x', 'y'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['moves'],
+      additionalProperties: false,
+    },
+    execute: (args) => write('/nodes/arrange', args),
   });
 
   modelContext.registerTool({
