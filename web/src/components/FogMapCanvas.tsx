@@ -317,8 +317,10 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
     // that isn't guaranteed to land before this handler's own pointerup
     // schedules a child) and could sprout a child on right-click. Refusing
     // to even start tracking a non-primary button removes the race
-    // entirely, rather than trying to win it.
-    if (e.pointerType !== 'touch' && e.button !== 0) return;
+    // entirely, rather than trying to win it. macOS Ctrl+click is a
+    // context-menu gesture too, but arrives with button === 0 — treat any
+    // ctrl-modified press as secondary as well.
+    if (e.pointerType !== 'touch' && (e.button !== 0 || e.ctrlKey)) return;
     e.stopPropagation();
     const el = e.currentTarget as HTMLElement;
     const startX = e.clientX, startY = e.clientY;
