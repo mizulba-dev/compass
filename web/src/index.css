@@ -130,7 +130,8 @@ body {
    without any JS math. */
 .node-toolbar {
   position: absolute; left: 50%; top: 0; transform: translate(-50%, -120%);
-  display: flex; gap: 2px; background: var(--toolbar-bg); color: var(--toolbar-fg);
+  display: flex; gap: 2px; background: var(--node-bg); color: var(--ink);
+  border: 1px solid var(--node-edge);
   border-radius: 9px; padding: 4px 5px; z-index: 40; box-shadow: var(--shadow); white-space: nowrap;
 }
 /* Fallback when the node is too close to the screen's top edge for the
@@ -142,7 +143,7 @@ body {
   background: none; border: none; cursor: pointer; color: inherit;
   font-family: inherit; font-size: .78rem; padding: 3px 8px; border-radius: 6px;
 }
-.node-toolbar button:hover { background: color-mix(in srgb, var(--toolbar-fg) 16%, transparent); }
+.node-toolbar button:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 
 /* ---------- chrome ---------- */
 .brand {
