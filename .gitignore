@@ -14,4 +14,4 @@ web/dist/
 
 # Local work artifacts
 /.work/
-shakedown/out/
+shakedown/

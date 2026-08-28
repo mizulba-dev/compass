@@ -81,7 +81,6 @@ web/                         React + TypeScript SPA (Vite)
   src/webmcp/register.ts     registerTool() wiring for all 4 tools
   src/webmcp/descriptions.ts tool descriptions — the main agent-behavior tuning surface
   src/live.ts                SSE subscription with 5s-poll fallback
-shakedown/                   smoke-test scenario for the canvas UI
 ```
 
 ## Running locally
