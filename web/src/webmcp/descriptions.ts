@@ -30,7 +30,10 @@ export const descriptions = {
   harvest:
     'Folds the grown map into a plan: one goal, the premises the human has established ' +
     '(their own nodes, not yours), and the next concrete tasks (your leaf nodes with no ' +
-    'children of their own). Call this only once the map has enough shape to summarize — ' +
-    'a couple of resolved branches, not just the first guesses. The map itself is left ' +
-    'untouched; harvest is a snapshot, not a mutation.',
+    'children of their own). Call this ONLY when the human explicitly asks to fold the ' +
+    'map into a plan, wrap up, or finish — for example "let\'s turn this into a plan" or ' +
+    '"I think we\'re done here". Never call it just because you added some nodes, and ' +
+    'never call it to check what a harvest would look like; opening the harvest view is ' +
+    'the human\'s own action on the page. The map itself is left untouched; harvest is a ' +
+    'snapshot, not a mutation.',
 } as const;

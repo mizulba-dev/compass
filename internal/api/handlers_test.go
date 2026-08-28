@@ -298,3 +298,121 @@ func TestUpdateNodeCannotMoveOrDelete(t *testing.T) {
 		t.Fatalf("x must be unchanged by update_node: want %v, got %v", origX, found["x"])
 	}
 }
+
+// estimatedRect mirrors internal/api/mutations.go's estimateRect, hand-
+// written independently here rather than imported: the test asserts an
+// emergent property (no two node footprints overlap after a realistic
+// bulk-add), not a specific internal call sequence, so it should use its
+// own copy of the geometry to catch a real regression rather than a
+// refactor of the production formula.
+type estimatedRect struct{ x0, y0, x1, y1 float64 }
+
+func estimatedRectFor(x, y float64, text string) estimatedRect {
+	raw := 14*float64(len([]rune(text))) + 40
+	width := raw
+	if width > 260 {
+		width = 260
+	}
+	if width < 40 {
+		width = 40
+	}
+	lines := 1.0
+	if raw > 260 {
+		lines = 1
+		for lines*260 < raw {
+			lines++
+		}
+	}
+	height := 40 + (lines-1)*22
+	return estimatedRect{x0: x, y0: y, x1: x + width, y1: y + height}
+}
+
+func rectsOverlap(a, b estimatedRect) bool {
+	return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0
+}
+
+// TestAddNodesAvoidsOverlapAcrossBranches is the standing falsification
+// probe for the FB-driven layout fix: bulk-adding branches and their
+// children (the shape a real "3 areas x children" agent turn produces) must
+// never leave two node footprints overlapping, even across different
+// branches.
+func TestAddNodesAvoidsOverlapAcrossBranches(t *testing.T) {
+	h := newTestServer(t)
+	id := createCanvas(t, h)
+	rootID, token := placeRoot(t, h, id, "考えたいこと")
+
+	rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+		"readToken": token,
+		"parent":    rootID,
+		"nodes": []map[string]any{
+			{"text": "予算まわりを整理する"},
+			{"text": "住宅ローンの基本を知る"},
+			{"text": "候補エリアを2〜3か所に絞る"},
+		},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add branch nodes: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	m := getMapNoDeliver(t, h, id)
+	token = m["readToken"].(string)
+	nodes := m["nodes"].([]any)
+	var branchIDs []string
+	for _, raw := range nodes {
+		n := raw.(map[string]any)
+		if n["id"] != rootID {
+			branchIDs = append(branchIDs, n["id"].(string))
+		}
+	}
+	if len(branchIDs) != 3 {
+		t.Fatalf("want 3 branch nodes, got %d", len(branchIDs))
+	}
+
+	childTexts := [][]string{
+		{"月々いくら払えるか決める", "諸費用は物件価格の6〜9%程度", "頭金をいくら用意するか決める"},
+		{"事前審査を受ける", "変動と固定の違いを学ぶ", "借入可能額の目安をつかむ"},
+		{"通勤圏で2駅だけ候補にする", "中古相場をSUUMOで眺める", "内見を1件予約してみる"},
+	}
+	for i, branchID := range branchIDs {
+		var nodesPayload []map[string]any
+		for _, text := range childTexts[i] {
+			nodesPayload = append(nodesPayload, map[string]any{"text": text})
+		}
+		rec := postJSON(t, h, "/api/canvas/"+id+"/nodes", map[string]any{
+			"readToken": token,
+			"parent":    branchID,
+			"nodes":     nodesPayload,
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("add children of branch %d: want 200, got %d: %s", i, rec.Code, rec.Body.String())
+		}
+		m := getMapNoDeliver(t, h, id)
+		token = m["readToken"].(string)
+	}
+
+	final := getMapNoDeliver(t, h, id)
+	finalNodes := final["nodes"].([]any)
+	if len(finalNodes) != 13 { // root + 3 branches + 3*3 children
+		t.Fatalf("want 13 nodes total, got %d", len(finalNodes))
+	}
+
+	type nt struct {
+		id   string
+		rect estimatedRect
+	}
+	var rects []nt
+	for _, raw := range finalNodes {
+		n := raw.(map[string]any)
+		rects = append(rects, nt{
+			id:   n["id"].(string),
+			rect: estimatedRectFor(n["x"].(float64), n["y"].(float64), n["text"].(string)),
+		})
+	}
+	for i := 0; i < len(rects); i++ {
+		for j := i + 1; j < len(rects); j++ {
+			if rectsOverlap(rects[i].rect, rects[j].rect) {
+				t.Fatalf("node %s and %s footprints overlap: %+v vs %+v", rects[i].id, rects[j].id, rects[i].rect, rects[j].rect)
+			}
+		}
+	}
+}

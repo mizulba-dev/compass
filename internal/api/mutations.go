@@ -1,6 +1,9 @@
 package api
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"math"
+)
 
 var colorPalette = []string{"#F0731F", "#E8489B", "#D9A514", "#57A345", "#2D9BB5", "#7A5AF8"}
 
@@ -75,6 +78,55 @@ func colorFor(m *MapData, parent *Node) string {
 	return parent.Color
 }
 
+// rect is an approximate node footprint, estimated from text length rather
+// than a real layout pass (the server never renders anything) — good
+// enough to keep newly added nodes from landing on top of others.
+type rect struct{ x0, y0, x1, y1 float64 }
+
+func estimateRect(x, y float64, text string) rect {
+	raw := 14*float64(len([]rune(text))) + 40
+	width := raw
+	if width > 260 {
+		width = 260
+	}
+	if width < 40 {
+		width = 40
+	}
+	lines := 1.0
+	if raw > 260 {
+		lines = math.Ceil(raw / 260)
+	}
+	height := 40 + (lines-1)*22
+	return rect{x0: x, y0: y, x1: x + width, y1: y + height}
+}
+
+func rectsOverlap(a, b rect) bool {
+	return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0
+}
+
+// avoidCollisions nudges a newly proposed position straight down until its
+// estimated footprint clears every existing node's — including nodes on
+// other branches, not just siblings. It only ever moves the new node: an
+// existing node (server-placed or human-pinned) is never repositioned by
+// this or any other path, so a human's placement is permanent.
+func avoidCollisions(m *MapData, x, y float64, text string) (float64, float64) {
+	for attempt := 0; attempt < 50; attempt++ {
+		cand := estimateRect(x, y, text)
+		conflict := false
+		for i := range m.Nodes {
+			if rectsOverlap(cand, estimateRect(m.Nodes[i].X, m.Nodes[i].Y, m.Nodes[i].Text)) {
+				conflict = true
+				break
+			}
+		}
+		if !conflict {
+			return x, y
+		}
+		y += 60
+	}
+	return x, y
+}
+
 func removeSubtree(m *MapData, id string) {
 	toRemove := map[string]bool{id: true}
 	// Repeatedly sweep for children of anything already marked, since a
@@ -140,6 +192,7 @@ func applyAddNodes(m *MapData, body json.RawMessage) string {
 			kind = "question"
 		}
 		x, y, dir := childPos(m, parent)
+		x, y = avoidCollisions(m, x, y, in.Text)
 		parentID := parent.ID
 		m.Nodes = append(m.Nodes, Node{
 			ID:        newLocalID(),
@@ -266,9 +319,11 @@ func applyNodeHuman(m *MapData, body json.RawMessage) string {
 	}
 	if req.X != nil {
 		node.X = *req.X
+		node.Pinned = true
 	}
 	if req.Y != nil {
 		node.Y = *req.Y
+		node.Pinned = true
 	}
 	if req.Fog != nil {
 		node.Fog = *req.Fog

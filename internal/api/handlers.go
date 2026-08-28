@@ -39,6 +39,7 @@ type Node struct {
 	Star      bool    `json:"star"`
 	Origin    string  `json:"origin"` // "human" | "agent"
 	CreatedAt string  `json:"createdAt"`
+	Pinned    bool    `json:"pinned,omitempty"` // true once a human has dragged it — auto-layout must never move it again
 }
 
 type Harvest struct {

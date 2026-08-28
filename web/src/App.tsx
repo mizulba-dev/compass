@@ -25,7 +25,6 @@ function App() {
   const [webmcpStatus, setWebmcpStatus] = useState<WebMCPStatus>({ state: 'waiting' });
   const [sheetOpen, setSheetOpen] = useState(false);
   const readTokenRef = useRef('');
-  const hadHarvestRef = useRef(false);
 
   // Page-level status, independent of which map is loaded — connect as
   // soon as this component exists so devtools-less hosts (ChatGPT's in-app
@@ -77,16 +76,6 @@ function App() {
       setMapUpdateListener(null);
     };
   }, [id]);
-
-  // Open the harvest sheet automatically the moment the agent produces one
-  // — this is the payoff moment ("the map folds into a plan"), not
-  // something the human should have to go find a button for.
-  useEffect(() => {
-    if (map?.harvest && !hadHarvestRef.current) {
-      hadHarvestRef.current = true;
-      setSheetOpen(true);
-    }
-  }, [map?.harvest]);
 
   /**
    * Runs a write, retrying once with a freshly re-read token if the human's
@@ -162,7 +151,12 @@ function App() {
 
   return (
     <>
-      <div className="brand">霧の地図</div>
+      <div className="brand">
+        霧の地図
+        <p className="webmcp-status" data-testid="webmcp-status" role={errorMessage ? 'alert' : undefined}>
+          {errorMessage ?? webmcpStatusText(webmcpStatus)}
+        </p>
+      </div>
       <div className="hint-bar">drag: 移動 ／ dblclick: 編集・追加</div>
 
       {map ? (
@@ -186,10 +180,6 @@ function App() {
       )}
 
       <HarvestSheet harvest={map?.harvest ?? null} open={sheetOpen} onClose={() => setSheetOpen(false)} />
-
-      <p className="footer-status" data-testid="webmcp-status" role={errorMessage ? 'alert' : undefined}>
-        {errorMessage ?? webmcpStatusText(webmcpStatus)}
-      </p>
     </>
   );
 }
