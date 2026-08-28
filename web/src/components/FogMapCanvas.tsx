@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { HelpCircle, MessageCircle, Pencil, Star, Trash2, Sparkles, Plus, Minus, Maximize } from 'lucide-react';
+import { HelpCircle, Pencil, Star, Trash2, Sparkles, Plus, Minus, Maximize } from 'lucide-react';
 import type { MapNode } from '../types';
 
 export interface AddNodeInput {
@@ -26,8 +26,6 @@ interface FogMapCanvasProps {
   onAdd: (input: AddNodeInput) => Promise<string | undefined>;
   /** Applies a human edit (move/fog/star/delete/text); resolves once persisted. */
   onEdit: (input: EditNodeInput) => Promise<void>;
-  /** Marks a node as the conversation's current focus (records a "discuss" humanAction). */
-  onDiscuss: (node: MapNode) => void;
 }
 
 interface View {
@@ -38,12 +36,6 @@ interface View {
 
 const SINGLE_CLICK_DELAY_MS = 250;
 const LONG_PRESS_MS = 500;
-// How long the 💬 badge stays lit after marking a node for discussion. This
-// is a client-only, purely visual hint (not persisted map data), so it's
-// simplest to just time it out rather than track whether the agent has
-// actually consumed the humanAction yet — the badge is a nudge, not a
-// source of truth.
-const DISCUSS_BADGE_MS = 60000;
 // If a selected node's top edge is closer to the screen's top than this
 // many pixels, the floating toolbar (which normally sits above the node)
 // has nowhere to render without being clipped/off-screen, so it flips to
@@ -76,17 +68,13 @@ function childPos(nodes: MapNode[], parent: MapNode): { x: number; y: number } {
 }
 
 
-export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasProps) {
+export function FogMapCanvas({ nodes, onAdd, onEdit }: FogMapCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
-  // Which nodes currently show the 💬 badge. Purely a client-side visual
-  // hint (see DISCUSS_BADGE_MS) — never persisted, never read from the map.
-  const [discussedIds, setDiscussedIds] = useState<Set<string>>(new Set());
-  const discussTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const draggingRef = useRef<{ id: string; moved: boolean } | null>(null);
   // Drag-time edge following: mirrors the mock's
   // requestAnimationFrame(renderEdges) on every pointermove. The dragged
@@ -240,50 +228,6 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
       setEditingText('');
     }
   }
-
-  // ---------- discuss ----------
-  const clearDiscussTimer = (nodeId: string) => {
-    const existing = discussTimersRef.current.get(nodeId);
-    if (existing) clearTimeout(existing);
-    discussTimersRef.current.delete(nodeId);
-  };
-
-  /**
-   * Toggles the 💬 mark: pressing it again while already marked clears the
-   * badge immediately and does NOT record a humanAction (turning it off is
-   * not something the agent needs to react to) — only marking it on records
-   * "discuss". Marking on (re)starts the 60s auto-extinguish timer.
-   */
-  const toggleDiscuss = (node: MapNode) => {
-    if (discussedIds.has(node.id)) {
-      clearDiscussTimer(node.id);
-      setDiscussedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(node.id);
-        return next;
-      });
-      return;
-    }
-    onDiscuss(node);
-    clearDiscussTimer(node.id);
-    setDiscussedIds((prev) => new Set(prev).add(node.id));
-    const timer = setTimeout(() => {
-      discussTimersRef.current.delete(node.id);
-      setDiscussedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(node.id);
-        return next;
-      });
-    }, DISCUSS_BADGE_MS);
-    discussTimersRef.current.set(node.id, timer);
-  };
-
-  useEffect(() => {
-    const timers = discussTimersRef.current;
-    return () => {
-      timers.forEach((t) => clearTimeout(t));
-    };
-  }, []);
 
   // ---------- node interaction ----------
 
@@ -558,11 +502,6 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
                         <Star size={12} fill="currentColor" />
                       </span>
                     )}
-                    {discussedIds.has(n.id) && (
-                      <span className="spark" data-testid="discuss-badge">
-                        <MessageCircle size={12} />
-                      </span>
-                    )}
                     <span className="text">{n.text || ' '}</span>
                     {n.fog && (
                       <span className="fogtag">
@@ -593,13 +532,6 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
                     )}
                     <button type="button" onClick={() => startEdit(n)} data-testid="node-start-edit">
                       <Pencil size={14} /> 編集
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleDiscuss(n)}
-                      data-testid="node-discuss"
-                    >
-                      <MessageCircle size={14} /> {discussedIds.has(n.id) ? '解除' : '相談'}
                     </button>
                     {!n.root && (
                       <button

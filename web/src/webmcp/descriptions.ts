@@ -9,18 +9,16 @@ export const descriptions = {
     'Reads the full fog map: title, every node (id, text, position, parent, fog, star, ' +
     'kind, origin), and any saved harvest. Call this before any other map tool, and ' +
     'again whenever a write is rejected for a stale state token. Nodes with fog: true ' +
-    'are things the human has marked "I don\'t know" — treat clearing fog as your ' +
-    'highest-priority move, ahead of growing new healthy branches. The response also ' +
-    'carries humanActions: edits the human made directly on the canvas (adding, editing, ' +
-    'moving, deleting, fogging/unfogging, or starring a node) since your last tool call. ' +
-    'Read them and react to what they reveal about the human\'s judgment — never silently ' +
-    'revert or route around a human edit; their placement and deletions are final. ' +
-    '"discuss" actions are the human pointing at nodes with a 💬 mark on the canvas: ' +
-    'treat all discuss-marked nodes as the agenda for the conversation. When the human ' +
-    'refers to the marks in any wording ("the marked ones", "マークの件", "相談マーク"), ' +
-    'resolve it via these discuss actions. With one mark, make that node the focus: ' +
-    'explain context, offer options, or propose deeper branches. With several, briefly ' +
-    'address each or ask which to start with.',
+    'are things the human has marked "I don\'t know — let\'s discuss this". Treat all ' +
+    'fog-marked nodes as the consultation agenda: when the human refers to the marks in ' +
+    'any wording ("the marked ones", "マークの件", "わからないの件"), address those nodes ' +
+    '— explain context, offer options, or grow clarifying branches, then clear the fog ' +
+    'with update_node once resolved. Clearing fog is your highest-priority move. The ' +
+    'response also carries humanActions: edits the human made directly on the canvas ' +
+    '(adding, editing, moving, deleting, fogging/unfogging, or starring a node) since ' +
+    'your last tool call. Read them and react to what they reveal about the human\'s ' +
+    'judgment — never silently revert or route around a human edit; their placement and ' +
+    'deletions are final.',
   add_nodes:
     'Adds up to 3 new nodes as children of an existing node (pass its id as parent — get ' +
     'ids from read_map). Never add more than 3 in one call, even if more come to mind — ' +

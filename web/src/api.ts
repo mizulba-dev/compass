@@ -74,7 +74,7 @@ export async function editNodeHuman(
   return postWrite(`/api/canvas/${id}/node/human`, { readToken, ...edit });
 }
 
-export type HumanActionType = 'add' | 'edit' | 'move' | 'delete' | 'fog' | 'unfog' | 'star' | 'discuss';
+export type HumanActionType = 'add' | 'edit' | 'move' | 'delete' | 'fog' | 'unfog' | 'star';
 
 /** Records a human edit for the agent to notice on its next tool call. */
 export async function recordHumanAction(id: string, type: HumanActionType, data: unknown): Promise<void> {

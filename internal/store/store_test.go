@@ -194,11 +194,11 @@ func TestMoveActionsCollapseToLatestPerNode(t *testing.T) {
 	}
 }
 
-// TestDiscussActionIsDeliveredAndCollapses is the standing falsification
-// probe for the discuss mechanism: a "discuss" humanAction must actually
-// reach the agent on the next read, and repeated clicks on the same node
-// must collapse to one pending action rather than queuing up.
-func TestDiscussActionIsDeliveredAndCollapses(t *testing.T) {
+// TestFogActionIsDeliveredOnce is the standing falsification probe for fog
+// as the sole consultation marker (discuss was folded into it): a "fog"
+// humanAction must actually reach the agent on the next read, and must not
+// be redelivered on a later read.
+func TestFogActionIsDeliveredOnce(t *testing.T) {
 	ctx := context.Background()
 	s := newStore(t)
 
@@ -207,13 +207,7 @@ func TestDiscussActionIsDeliveredAndCollapses(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if err := s.RecordHumanAction(ctx, id, "discuss", json.RawMessage(`{"nodeId":"a"}`)); err != nil {
-		t.Fatalf("RecordHumanAction: %v", err)
-	}
-	if err := s.RecordHumanAction(ctx, id, "discuss", json.RawMessage(`{"nodeId":"a"}`)); err != nil {
-		t.Fatalf("RecordHumanAction: %v", err)
-	}
-	if err := s.RecordHumanAction(ctx, id, "discuss", json.RawMessage(`{"nodeId":"a"}`)); err != nil {
+	if err := s.RecordHumanAction(ctx, id, "fog", json.RawMessage(`{"nodeId":"a"}`)); err != nil {
 		t.Fatalf("RecordHumanAction: %v", err)
 	}
 
@@ -222,10 +216,10 @@ func TestDiscussActionIsDeliveredAndCollapses(t *testing.T) {
 		t.Fatalf("ReadAndDeliver: %v", err)
 	}
 	if len(row.ActionsPending) != 1 {
-		t.Fatalf("3 discuss clicks on the same node: want 1 collapsed pending action, got %d: %+v", len(row.ActionsPending), row.ActionsPending)
+		t.Fatalf("want 1 pending action, got %d: %+v", len(row.ActionsPending), row.ActionsPending)
 	}
-	if row.ActionsPending[0].Type != "discuss" {
-		t.Fatalf("want type discuss, got %s", row.ActionsPending[0].Type)
+	if row.ActionsPending[0].Type != "fog" {
+		t.Fatalf("want type fog, got %s", row.ActionsPending[0].Type)
 	}
 
 	// Delivered once — a second consecutive read must not redeliver it.
