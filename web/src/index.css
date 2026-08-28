@@ -146,11 +146,14 @@ body {
 
 .harvest-fab {
   position: fixed; right: 20px; bottom: 22px; z-index: 50;
-  width: 52px; height: 52px; border-radius: 50%; border: none; cursor: pointer;
-  background: var(--accent); color: #fff; font-size: 1.2rem;
+  height: 46px; border-radius: 999px; border: none; cursor: pointer;
+  padding: 0 18px; font-size: .92rem; font-weight: 700; font-family: inherit;
+  background: var(--accent); color: #fff;
   box-shadow: 0 4px 18px color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: fab-in .4s ease;
 }
-.harvest-fab:disabled { opacity: .4; cursor: default; }
+@keyframes fab-in { from { transform: scale(.6); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .harvest-fab { animation: none; } }
 
 .hint-bar {
   position: fixed; top: 14px; right: 16px; z-index: 50;

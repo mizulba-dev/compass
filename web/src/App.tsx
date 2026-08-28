@@ -173,16 +173,17 @@ function App() {
         </div>
       )}
 
-      <button
-        type="button"
-        className="harvest-fab"
-        aria-label="収穫を見る"
-        data-testid="harvest-fab"
-        disabled={!map?.harvest}
-        onClick={() => setSheetOpen(true)}
-      >
-        ⇣
-      </button>
+      {map?.harvest && (
+        <button
+          type="button"
+          className="harvest-fab"
+          aria-label="収穫を見る"
+          data-testid="harvest-fab"
+          onClick={() => setSheetOpen(true)}
+        >
+          ⇣ 収穫
+        </button>
+      )}
 
       <HarvestSheet harvest={map?.harvest ?? null} open={sheetOpen} onClose={() => setSheetOpen(false)} />
 
