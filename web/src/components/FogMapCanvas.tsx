@@ -551,7 +551,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
                     {n.star && <span className="spark">★</span>}
                     {discussedIds.has(n.id) && <span className="spark" data-testid="discuss-badge">💬</span>}
                     <span className="text">{n.text || ' '}</span>
-                    {n.fog && <span className="fogtag">🌫 わからない</span>}
+                    {n.fog && <span className="fogtag">❓ わからない</span>}
                   </>
                 )}
 
@@ -571,11 +571,11 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
                         onClick={() => void onEdit({ id: n.id, fog: !n.fog })}
                         data-testid="node-toggle-fog"
                       >
-                        {n.fog ? '🌫 晴れた' : '🌫'}
+                        {n.fog ? '❓ 解消した' : '❓ わからない'}
                       </button>
                     )}
                     <button type="button" onClick={() => startEdit(n)} data-testid="node-start-edit">
-                      ✏
+                      ✏ 編集
                     </button>
                     <button
                       type="button"
@@ -590,7 +590,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
                         onClick={() => void onEdit({ id: n.id, star: !n.star })}
                         data-testid="node-toggle-star"
                       >
-                        {n.star ? '★' : '☆'}
+                        {n.star ? '★ 解除' : '★ 重要'}
                       </button>
                     )}
                     <button
@@ -602,7 +602,7 @@ export function FogMapCanvas({ nodes, onAdd, onEdit, onDiscuss }: FogMapCanvasPr
                       style={{ color: 'var(--danger)' }}
                       data-testid="node-delete"
                     >
-                      ✕
+                      ✕ 削除
                     </button>
                   </div>
                 )}
